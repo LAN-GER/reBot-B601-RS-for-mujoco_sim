@@ -61,12 +61,20 @@ class RebotArmClient:
         except Exception:
             return False
 
-    def connect(self, enable: bool = True) -> None:
+    def connect(self, enable: bool = True, hold: bool = True) -> None:
         """连接真实机械臂。
 
         连接前会检查 CAN 接口是否已启动；若未启动则抛出清晰提示。
-        连接成功后默认对所有关节上使能，以便电机持续反馈状态。
+        连接成功后默认对所有关节上使能并切换到 MIT 模式，以便持续读取反馈。
+
+        Args:
+            enable: 是否对关节上使能。必须使能才能读取到有效反馈。
+            hold: 使能后是否保持位置（hold=True）。若只想被动拖动机械臂
+                并观察状态变化，可设 ``hold=False``，读取时会持续发送
+                零力矩 MIT 命令，电机不产生保持力矩但仍能触发反馈回传。
         """
+        from motorbridge.models import Mode
+
         if not self.check_can():
             raise RuntimeError(
                 f"CAN interface '{self.channel}' is not up. "
@@ -74,16 +82,64 @@ class RebotArmClient:
             )
         self.arm.connect()
         self._connected = True
+        self._hold = hold
         if enable:
             self.arm.enable_all()
+            time.sleep(0.3)
+            for g in self.arm.groups.values():
+                try:
+                    g.mode_mit()
+                except Exception as exc:
+                    print(f"[RebotArmClient] mode_mit failed for group {g.name}: {exc}")
+            if not hold:
+                # 先发送一次零力矩 MIT，让电机进入零力矩状态
+                self._send_zero_mit()
 
     @property
     def joint_names(self) -> list[str]:
         return list(self.arm.joint_names)
 
+    def _send_zero_mit(self) -> None:
+        """发送零力矩 MIT 命令，用于触发反馈回传或解除保持力矩。"""
+        for m in self.arm._motor_map.values():
+            try:
+                m.send_mit(0.0, 0.0, 0.0, 0.0, 0.0)
+            except Exception:
+                pass
+
     def get_state(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """读取真实机器人状态，返回 (q, dq, tau)。"""
-        return self.arm.get_state()
+        """读取真实机器人状态，返回 (q, dq, tau)。
+
+        RobStride 电机需要通过发送 MIT 命令触发反馈回传，因此每次读取前
+        会先发送零力矩 MIT 命令，再 poll 反馈并读取各电机状态。
+        """
+        # 发送零力矩 MIT 命令触发反馈回传
+        self._send_zero_mit()
+        time.sleep(0.002)
+
+        # 轮询反馈
+        for ctrl in self.arm._ctrl_map.values():
+            try:
+                ctrl.poll_feedback_once()
+            except Exception:
+                pass
+
+        pos, vel, torq = [], [], []
+        for jc in self.arm._all_joints:
+            st = self.arm._motor_map[jc.name].get_state()
+            if st is not None:
+                pos.append(st.pos)
+                vel.append(st.vel)
+                torq.append(st.torq)
+            else:
+                pos.append(0.0)
+                vel.append(0.0)
+                torq.append(0.0)
+        return (
+            np.array(pos, dtype=np.float64),
+            np.array(vel, dtype=np.float64),
+            np.array(torq, dtype=np.float64),
+        )
 
     def disconnect(self) -> None:
         """安全断开：失能所有电机并标记为未连接。"""
@@ -162,17 +218,22 @@ class RealToSimBridge:
         """将真实状态写入仿真。
 
         Args:
-            q_real: 若提供，直接使用该 6-DOF 关节位置；否则从硬件读取。
+            q_real: 若提供，直接使用该关节位置（支持完整真实关节数组或 6-DOF 臂关节数组）；否则从硬件读取。
         """
         import mujoco
 
         if q_real is not None:
-            q_mapped = np.asarray(q_real, dtype=float)
-            if q_mapped.shape[0] != NUM_JOINTS:
+            q_arr = np.asarray(q_real, dtype=float)
+            if q_arr.shape[0] == NUM_JOINTS:
+                q_mapped = q_arr
+                dq = np.zeros(NUM_JOINTS)
+            elif q_arr.shape[0] >= NUM_JOINTS:
+                q_mapped = q_arr[self._real_indices]
+                dq = np.zeros(NUM_JOINTS)
+            else:
                 raise ValueError(
-                    f"Expected {NUM_JOINTS} joint values, got {q_mapped.shape[0]}"
+                    f"Expected at least {NUM_JOINTS} joint values, got {q_arr.shape[0]}"
                 )
-            dq = np.zeros(NUM_JOINTS)
         else:
             q_full, dq_full, _ = self.read_real_state()
             q_mapped = q_full[self._real_indices]
@@ -203,6 +264,7 @@ def create_real_arm(
     hw_yaml: str = "rebotarm_rs.yaml",
     channel: str = "can0",
     fallback_to_mock: bool = False,
+    hold: bool = True,
 ) -> RebotArmClient | None:
     """尝试连接真实机械臂，失败时可选回退到模拟模式。
 
@@ -210,6 +272,7 @@ def create_real_arm(
         hw_yaml: SDK 硬件配置文件名。
         channel: CAN 接口名，默认 can0。
         fallback_to_mock: 连接失败时是否返回 None（让调用方使用 mock 模式）。
+        hold: 是否让电机保持位置。设为 False 可让机械臂被手动拖动。
 
     Returns:
         已连接的 ``RebotArmClient``，或 ``None``（仅当 fallback_to_mock=True 且失败时）。
@@ -219,7 +282,7 @@ def create_real_arm(
     """
     try:
         client = RebotArmClient(hw_yaml=hw_yaml, channel=channel)
-        client.connect()
+        client.connect(hold=hold)
         return client
     except Exception as exc:
         if fallback_to_mock:

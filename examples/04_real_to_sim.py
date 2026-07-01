@@ -23,6 +23,7 @@ import time
 from pathlib import Path
 
 import mujoco
+import mujoco.viewer
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -46,6 +47,17 @@ def main() -> None:
         default="rebotarm_rs.yaml",
         help="SDK hardware configuration YAML (default: rebotarm_rs.yaml)",
     )
+    parser.add_argument(
+        "--rate",
+        type=float,
+        default=50.0,
+        help="Real robot state polling rate in Hz (default: 50)",
+    )
+    parser.add_argument(
+        "--no-hold",
+        action="store_true",
+        help="Disable motor holding torque after enable (allows manual dragging)",
+    )
     args = parser.parse_args()
 
     print("[04_real_to_sim] Starting...", flush=True)
@@ -60,6 +72,7 @@ def main() -> None:
             hw_yaml=args.hw_yaml,
             channel=args.can,
             fallback_to_mock=True,
+            hold=not args.no_hold,
         )
         if arm_interface is None:
             print("[mock mode] Using mock data because real hardware is unavailable.")
@@ -73,41 +86,66 @@ def main() -> None:
             q_mock = np.zeros(6)
         else:
             q_real, _, _ = bridge.read_real_state()
-            bridge.sync(q_real)
-            print(f"Initial real state synced: q={np.degrees(q_real[:6]).round(2)} deg")
+            bridge.sync()
+            print(
+                "Initial real state synced: "
+                f"q={np.degrees(q_real[:6]).round(2)} deg",
+                flush=True,
+            )
 
         dt = float(robot.model.opt.timestep)
+        real_dt = 1.0 / max(args.rate, 1.0) if not bridge.is_mock else dt
 
         run_viewer = not args.headless
 
-        def step_sync() -> None:
+        def step_sync() -> np.ndarray:
             nonlocal q_mock
             if bridge.is_mock:
                 elapsed = time.time() - t0
                 q_mock = 0.3 * np.sin(2.0 * elapsed + np.arange(6))
                 bridge.sync(q_mock)
-            else:
-                bridge.sync()
+                return q_mock
+            q_real, _, _ = bridge.read_real_state()
+            bridge.sync(q_real)
+            return q_real[:6]
 
         if run_viewer:
             print("Opening MuJoCo viewer. Close the window to stop.")
             with mujoco.viewer.launch_passive(robot.model, robot.data) as viewer:
                 try:
                     while viewer.is_running():
-                        step_sync()
+                        q_now = step_sync()
                         viewer.sync()
-                        time.sleep(dt)
+                        if not bridge.is_mock:
+                            print(
+                                f"  real(deg): {np.degrees(q_now).round(2)} | "
+                                f"sim(deg): {np.degrees(robot.get_q()).round(2)}",
+                                end="\r",
+                                flush=True,
+                            )
+                        time.sleep(real_dt)
                 except KeyboardInterrupt:
                     print("\nCtrl+C received, disabling robot...")
-            print("Viewer closed.")
+            print("\nViewer closed.")
         else:
             print("Running headless real-to-sim sync. Press Ctrl+C to stop.")
             try:
                 while True:
-                    step_sync()
-                    q_sim = robot.get_q()
-                    print(f"  Sim q (deg): {np.degrees(q_sim).round(2)}", end="\r")
-                    time.sleep(dt)
+                    q_now = step_sync()
+                    if bridge.is_mock:
+                        print(
+                            f"  Sim q (deg): {np.degrees(q_now).round(2)}",
+                            end="\r",
+                            flush=True,
+                        )
+                    else:
+                        print(
+                            f"  real(deg): {np.degrees(q_now).round(2)} | "
+                            f"sim(deg): {np.degrees(robot.get_q()).round(2)}",
+                            end="\r",
+                            flush=True,
+                        )
+                    time.sleep(real_dt)
             except KeyboardInterrupt:
                 print("\nCtrl+C received, disabling robot...")
 
