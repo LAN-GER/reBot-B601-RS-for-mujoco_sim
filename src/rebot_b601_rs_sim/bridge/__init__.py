@@ -1,6 +1,17 @@
 """Real-to-Sim / Sim-to-Real 桥接层。"""
 
-from .real_to_sim import RealToSimBridge
+from .real_to_sim import (
+    MockRealRobot,
+    RebotArmClient,
+    RealToSimBridge,
+    create_real_arm,
+)
 from .sim_to_real import SimToRealBridge
 
-__all__ = ["RealToSimBridge", "SimToRealBridge"]
+__all__ = [
+    "MockRealRobot",
+    "RebotArmClient",
+    "RealToSimBridge",
+    "create_real_arm",
+    "SimToRealBridge",
+]

@@ -13,7 +13,7 @@
 - [x] 集成 `reBotArm_control_py` SDK
 - [x] MuJoCo 中实现 IK（含交互式 Viewer 示例）
 - [x] MuJoCo 中实现重力补偿（含交互式 Viewer 示例）
-- [x] Real-to-Sim 接口（示例为模拟模式）
+- [x] Real-to-Sim 接口（支持真实 B601-RS 硬件与模拟模式）
 - [x] Sim-to-Real 接口（示例为模拟模式）
 
 ## 环境要求
@@ -89,8 +89,12 @@ rm assets/robot/rebot.xml
 # 加载模型并做简单物理仿真
 python examples/01_load_model.py
 
-# 将模拟的真实机器人状态同步到仿真
+# 将真实机器人状态同步到仿真（需先启动 CAN）
+sudo ip link set can0 up type can bitrate 500000
 python examples/04_real_to_sim.py
+
+# 无硬件时使用模拟模式
+python examples/04_real_to_sim.py --mock
 
 # 在仿真中计算控制指令并展示下发流程
 python examples/05_sim_to_real.py
@@ -105,6 +109,8 @@ python examples/01_load_model.py --viewer
 python examples/04_real_to_sim.py --viewer
 python examples/05_sim_to_real.py --viewer
 ```
+
+> **注意**：`04_real_to_sim.py` 默认会尝试连接真实机械臂；在无硬件环境中请使用 `--mock` 或 `--headless`。
 
 ### 交互式 MuJoCo Viewer 示例（需要图形界面）
 
@@ -186,8 +192,8 @@ reBot-B601-RS-for-mujoco_sim/
 
 - `third_party/reBotArm_control_py` 由脚本自动拉取，不会提交到本仓库。
 - `assets/robot/rebot.xml` 由 `load_mujoco_model()` 自动从 URDF 生成，已加入 `.gitignore`，不会提交到本仓库。
-- 真实机器人相关示例（`04_real_to_sim.py`、`05_sim_to_real.py`）当前为接口桩实现，
-  接入硬件后需补充 SDK actuator 的读写逻辑。
+- `04_real_to_sim.py` 已接入 `reBotArm_control_py` 的 `RebotArm`：连接真实机械臂前请确认 CAN 接口已启动；无硬件时会自动回退到模拟模式。
+- `05_sim_to_real.py` 当前为接口桩实现，接入硬件后需补充控制指令下发逻辑。
 - `scripts/convert_urdf_to_mjcf.py` 仅作为备用的简化 capsule 模型生成脚本，主流程不使用。
 
 ## 常见问题
