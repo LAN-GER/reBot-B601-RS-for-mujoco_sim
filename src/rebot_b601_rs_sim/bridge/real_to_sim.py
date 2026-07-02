@@ -169,15 +169,21 @@ class RealToSimBridge:
         self,
         robot: RobotModel,
         arm_interface: RebotArmClient | MockRealRobot | None = None,
+        gripper_scale: float = 0.00830,
     ) -> None:
         """
         Args:
             robot: MuJoCo 机器人模型封装。
             arm_interface: 真实机械臂客户端。若为 None，则使用模拟模式。
+            gripper_scale: 真实 gripper 电机位置到 MuJoCo 夹爪直线位移的缩放系数。
+                真实 gripper 位置（rad）乘以该系数得到 joint_left/joint_right 的位移（m）。
         """
+        import mujoco
+
         self.robot = robot
         self.arm_interface = arm_interface
         self._mock_mode = arm_interface is None or getattr(arm_interface, "is_mock", False)
+        self._gripper_scale = gripper_scale
 
         if arm_interface is None:
             self.arm_interface = MockRealRobot()
@@ -195,6 +201,16 @@ class RealToSimBridge:
                 f"Real robot joint list {real_joint_names} is missing "
                 f"joints expected by simulation: {missing}"
             )
+
+        # 夹爪映射：真实 gripper -> MuJoCo joint_left / joint_right
+        self._gripper_real_index: int | None = None
+        self._gripper_sim_addrs: list[int] = []
+        if "gripper" in real_joint_names:
+            self._gripper_real_index = real_joint_names.index("gripper")
+            for sim_name in ("joint_left", "joint_right"):
+                jid = mujoco.mj_name2id(robot.model, mujoco.mjtObj.mjOBJ_JOINT, sim_name)
+                if jid >= 0:
+                    self._gripper_sim_addrs.append(robot.model.jnt_qposadr[jid])
 
     @property
     def is_mock(self) -> bool:
@@ -222,12 +238,14 @@ class RealToSimBridge:
         """
         import mujoco
 
+        q_full: np.ndarray | None = None
         if q_real is not None:
             q_arr = np.asarray(q_real, dtype=float)
             if q_arr.shape[0] == NUM_JOINTS:
                 q_mapped = q_arr
                 dq = np.zeros(NUM_JOINTS)
             elif q_arr.shape[0] >= NUM_JOINTS:
+                q_full = q_arr
                 q_mapped = q_arr[self._real_indices]
                 dq = np.zeros(NUM_JOINTS)
             else:
@@ -245,6 +263,23 @@ class RealToSimBridge:
         for addr, v in zip(self.robot.joint_qpos_addrs, dq):
             if addr < self.robot.model.nv:
                 self.robot.data.qvel[addr] = v
+
+        # 同步夹爪：真实 gripper 电机位置 -> MuJoCo 左右滑动位移
+        if self._gripper_real_index is not None and q_full is not None:
+            gripper_pos = q_full[self._gripper_real_index]
+            disp = self._gripper_scale * gripper_pos
+            # 裁剪到各关节允许范围，避免负值或超限
+            for addr in self._gripper_sim_addrs:
+                if addr < self.robot.model.nq:
+                    jid = next(
+                        (i for i in range(self.robot.model.njnt)
+                         if self.robot.model.jnt_qposadr[i] == addr),
+                        -1,
+                    )
+                    if jid >= 0:
+                        lo, hi = self.robot.model.jnt_range[jid]
+                        disp = float(np.clip(disp, lo, hi))
+                    self.robot.data.qpos[addr] = disp
 
         mujoco.mj_forward(self.robot.model, self.robot.data)
 

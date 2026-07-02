@@ -58,6 +58,14 @@ def main() -> None:
         action="store_true",
         help="Disable motor holding torque after enable (allows manual dragging)",
     )
+    parser.add_argument(
+        "--gripper-scale",
+        type=float,
+        default=0.00830,
+        help="Scale from real gripper motor position (rad) to MuJoCo slide displacement (m). "
+             "Calibrated for 345deg motor travel -> 50mm per-side gripper opening. "
+             "Default: 0.00830",
+    )
     args = parser.parse_args()
 
     print("[04_real_to_sim] Starting...", flush=True)
@@ -80,7 +88,9 @@ def main() -> None:
         else:
             print(f"Real robot connected via {args.can}.")
 
-    with RealToSimBridge(robot, arm_interface=arm_interface) as bridge:
+    with RealToSimBridge(
+        robot, arm_interface=arm_interface, gripper_scale=args.gripper_scale
+    ) as bridge:
         if bridge.is_mock:
             t0 = time.time()
             q_mock = np.zeros(6)
@@ -98,28 +108,42 @@ def main() -> None:
 
         run_viewer = not args.headless
 
-        def step_sync() -> np.ndarray:
+        def step_sync() -> tuple[np.ndarray, float | None, float | None, float | None]:
             nonlocal q_mock
             if bridge.is_mock:
                 elapsed = time.time() - t0
                 q_mock = 0.3 * np.sin(2.0 * elapsed + np.arange(6))
                 bridge.sync(q_mock)
-                return q_mock
+                return q_mock, None, None, None
+
             q_real, _, _ = bridge.read_real_state()
             bridge.sync(q_real)
-            return q_real[:6]
+
+            gripper_pos = left_disp = right_disp = None
+            if bridge._gripper_real_index is not None:
+                gripper_pos = float(q_real[bridge._gripper_real_index])
+                if len(bridge._gripper_sim_addrs) >= 1:
+                    left_disp = float(robot.data.qpos[bridge._gripper_sim_addrs[0]])
+                if len(bridge._gripper_sim_addrs) >= 2:
+                    right_disp = float(robot.data.qpos[bridge._gripper_sim_addrs[1]])
+            return q_real[:6], gripper_pos, left_disp, right_disp
 
         if run_viewer:
             print("Opening MuJoCo viewer. Close the window to stop.")
             with mujoco.viewer.launch_passive(robot.model, robot.data) as viewer:
                 try:
                     while viewer.is_running():
-                        q_now = step_sync()
+                        q_now, gripper_pos, left_disp, right_disp = step_sync()
                         viewer.sync()
                         if not bridge.is_mock:
+                            q_sim = robot.get_q()
+                            gp = f"{np.degrees(gripper_pos):.1f}" if gripper_pos is not None else "N/A"
+                            ld = f"{left_disp*1000:.1f}" if left_disp is not None else "N/A"
+                            rd = f"{right_disp*1000:.1f}" if right_disp is not None else "N/A"
                             print(
-                                f"  real(deg): {np.degrees(q_now).round(2)} | "
-                                f"sim(deg): {np.degrees(robot.get_q()).round(2)}",
+                                f"  arm real(deg): {np.degrees(q_now).round(1)} | "
+                                f"arm sim(deg): {np.degrees(q_sim).round(1)} | "
+                                f"gripper={gp}deg L={ld}mm R={rd}mm",
                                 end="\r",
                                 flush=True,
                             )
@@ -131,7 +155,7 @@ def main() -> None:
             print("Running headless real-to-sim sync. Press Ctrl+C to stop.")
             try:
                 while True:
-                    q_now = step_sync()
+                    q_now, gripper_pos, left_disp, right_disp = step_sync()
                     if bridge.is_mock:
                         print(
                             f"  Sim q (deg): {np.degrees(q_now).round(2)}",
@@ -139,9 +163,14 @@ def main() -> None:
                             flush=True,
                         )
                     else:
+                        q_sim = robot.get_q()
+                        gp = f"{np.degrees(gripper_pos):.1f}" if gripper_pos is not None else "N/A"
+                        ld = f"{left_disp*1000:.1f}" if left_disp is not None else "N/A"
+                        rd = f"{right_disp*1000:.1f}" if right_disp is not None else "N/A"
                         print(
-                            f"  real(deg): {np.degrees(q_now).round(2)} | "
-                            f"sim(deg): {np.degrees(robot.get_q()).round(2)}",
+                            f"  arm real(deg): {np.degrees(q_now).round(1)} | "
+                            f"arm sim(deg): {np.degrees(q_sim).round(1)} | "
+                            f"gripper={gp}deg L={ld}mm R={rd}mm",
                             end="\r",
                             flush=True,
                         )
