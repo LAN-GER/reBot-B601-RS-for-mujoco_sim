@@ -46,14 +46,14 @@ def input_thread_fn(cmd_queue: queue.Queue, stop_event: threading.Event) -> None
 def main() -> None:
     # ── 加载模型 ──────────────────────────────────────────────────────────────
     mj_model, mj_data = load_mujoco_model()
-    nq = mj_model.nq
-    nv = mj_model.nv
     N_ARM_JOINTS = 6
+    N_GRIPPER_JOINTS = 2
+    N_ROBOT_JOINTS = N_ARM_JOINTS + N_GRIPPER_JOINTS  # 8
 
     gc = GravityCompensator()
 
     # 保持目标：静止时自动记录当前位置，松手后悬浮在这里
-    q_hold = np.zeros(nq)
+    q_hold = np.zeros(N_ROBOT_JOINTS)
     drag_threshold = 0.3  # rad/s，超过此值认为正在被拖动
     still_counter = 0
 
@@ -62,10 +62,10 @@ def main() -> None:
     gripper_close = np.zeros(2)
 
     # 控制增益
-    kp_hold = np.full(nv, 8.0)
-    kd_hold = np.full(nv, 2.4)
-    kp_drag = np.full(nv, 0.5)
-    kd_drag = np.full(nv, 0.2)
+    kp_hold = np.full(N_ROBOT_JOINTS, 8.0)
+    kd_hold = np.full(N_ROBOT_JOINTS, 2.4)
+    kp_drag = np.full(N_ROBOT_JOINTS, 0.5)
+    kd_drag = np.full(N_ROBOT_JOINTS, 0.2)
 
     # ── 交互线程 ──────────────────────────────────────────────────────────────
     cmd_queue: queue.Queue[str] = queue.Queue()
@@ -116,8 +116,8 @@ def main() -> None:
                     print("  闭合夹爪")
                     q_hold[N_ARM_JOINTS : N_ARM_JOINTS + 2] = gripper_close
 
-            q = mj_data.qpos[:nq].copy()
-            qd = mj_data.qvel[:nv].copy()
+            q = mj_data.qpos[:N_ROBOT_JOINTS].copy()
+            qd = mj_data.qvel[:N_ROBOT_JOINTS].copy()
             qd_norm = float(np.linalg.norm(qd[:N_ARM_JOINTS]))
 
             # 用 Pinocchio 计算重力力矩（显示用）
@@ -125,7 +125,7 @@ def main() -> None:
 
             # 用 MuJoCo 自身的偏置力做完全动态补偿，保证物理一致
             mujoco.mj_forward(mj_model, mj_data)
-            tau_dyn = mj_data.qfrc_bias[:nv].copy()
+            tau_dyn = mj_data.qfrc_bias[:N_ROBOT_JOINTS].copy()
 
             # 控制策略：
             #   - 被拖动时（速度大）：保持目标跟随当前位置，弱 PD/阻尼

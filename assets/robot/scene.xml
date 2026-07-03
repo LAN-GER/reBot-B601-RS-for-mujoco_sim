@@ -38,5 +38,16 @@
       <geom name="axis_z" type="cylinder" size="0.005" fromto="0 0 0 0 0 0.3" rgba="0 0 1 1" contype="0" conaffinity="0"/>
     </body>
 
+    <!-- 放置方块的台子 -->
+    <body name="table" pos="0.35 0 0.05">
+      <geom name="table_geom" type="box" size="0.1 0.1 0.05" rgba="0.4 0.4 0.4 1" friction="1.0 0.005 0.0001"/>
+    </body>
+
+    <!-- 可抓取方块 -->
+    <body name="cube" pos="0.35 0 0.115">
+      <freejoint name="cube_freejoint"/>
+      <geom name="cube_geom" type="box" size="0.015 0.015 0.015" rgba="1 0.5 0 1" mass="0.1" friction="2.0 0.1 0.01"/>
+    </body>
+
   </worldbody>
 </mujoco>

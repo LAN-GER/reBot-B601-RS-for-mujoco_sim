@@ -15,23 +15,144 @@ if TYPE_CHECKING:
     pass
 
 
+class MockJointGroup:
+    """模拟真实机械臂中的单个 JointGroup（arm / gripper）。"""
+
+    is_mock = True
+
+    def __init__(self, name: str, q0: np.ndarray, joint_names: list[str]) -> None:
+        self.name = name
+        self._joint_names = list(joint_names)
+        self.q = np.asarray(q0, dtype=float).reshape(-1).copy()
+        self._tau = np.zeros_like(self.q)
+        self._mode = "mit"
+
+    @property
+    def num_joints(self) -> int:
+        return len(self.q)
+
+    @property
+    def joint_names(self) -> list[str]:
+        return list(self._joint_names)
+
+    @property
+    def mode(self) -> str:
+        return self._mode
+
+    def enable(self) -> None:
+        pass
+
+    def disable(self) -> None:
+        pass
+
+    def mode_mit(self, kp=None, kd=None) -> bool:
+        self._mode = "mit"
+        return True
+
+    def mode_pos_vel(self, vlim=None) -> bool:
+        self._mode = "pos_vel"
+        return True
+
+    def send_mit(
+        self,
+        pos: np.ndarray,
+        vel: np.ndarray | None = None,
+        kp: np.ndarray | None = None,
+        kd: np.ndarray | None = None,
+        tau: np.ndarray | None = None,
+    ) -> None:
+        """模拟 MIT 命令：记录期望位置与前馈力矩，并简单积分位置。
+
+        力矩对位置的影响很小，主要用于反映电机输出，而不让 mock 位置漂移。
+        """
+        pos = np.asarray(pos, dtype=float).reshape(-1)
+        if pos.shape[0] != self.num_joints:
+            raise ValueError(
+                f"[{self.name}] Expected {self.num_joints} MIT positions, got {pos.shape[0]}"
+            )
+        tau = np.asarray(tau, dtype=float).reshape(-1) if tau is not None else np.zeros(self.num_joints)
+        kp = np.asarray(kp, dtype=float).reshape(-1) if kp is not None else np.zeros(self.num_joints)
+        kd = np.asarray(kd, dtype=float).reshape(-1) if kd is not None else np.zeros(self.num_joints)
+
+        # 简化的电机模型：目标位置牵引 + 可忽略的随机前馈力矩位移
+        error = pos - self.q
+        self.q += 0.001 * (kp * error) + 0.000005 * tau
+        self._tau = tau.copy()
+
+    def send_pos_vel(self, pos, vlim=None) -> None:
+        pos = np.asarray(pos, dtype=float).reshape(-1)
+        if pos.shape[0] == self.num_joints:
+            self.q = pos.copy()
+
+    def get_positions(self, request_feedback: bool = True) -> np.ndarray:
+        return self.q.copy()
+
+    def get_velocities(self, request_feedback: bool = True) -> np.ndarray:
+        return np.zeros(self.num_joints)
+
+    def __repr__(self) -> str:
+        return f"MockJointGroup({self.name!r}, joints={self.num_joints})"
+
+
 class MockRealRobot:
     """无硬件时的模拟真实机器人，便于离线调试。"""
 
     is_mock = True
 
-    def __init__(self, q0: np.ndarray | None = None, num_joints: int = NUM_JOINTS) -> None:
+    def __init__(
+        self,
+        q0: np.ndarray | None = None,
+        num_joints: int = NUM_JOINTS,
+        has_gripper: bool | None = None,
+    ) -> None:
         self.num_joints = num_joints
         self.q = np.asarray(q0, dtype=float) if q0 is not None else np.zeros(num_joints)
         if self.q.shape[0] != num_joints:
             raise ValueError(f"Expected {num_joints} joint values, got {self.q.shape[0]}")
 
+        if has_gripper is None:
+            has_gripper = num_joints > NUM_JOINTS
+
+        arm_q = self.q[:NUM_JOINTS]
+        self.arm = MockJointGroup("arm", arm_q, JOINT_NAMES)
+
+        if has_gripper:
+            gripper_q = self.q[NUM_JOINTS:] if len(self.q) > NUM_JOINTS else np.array([0.0])
+            self.gripper = MockJointGroup("gripper", gripper_q, ["gripper"])
+            self._has_gripper = True
+        else:
+            self.gripper = MockJointGroup("gripper", np.array([0.0]), ["gripper"])
+            self._has_gripper = False
+
+    @property
+    def arm_group(self) -> MockJointGroup:
+        """与 RebotArmClient 统一接口的分组访问。"""
+        return self.arm
+
+    @property
+    def gripper_group(self) -> MockJointGroup:
+        """与 RebotArmClient 统一接口的分组访问。"""
+        return self.gripper
+
+    @property
+    def has_gripper(self) -> bool:
+        return self._has_gripper
+
     @property
     def joint_names(self) -> list[str]:
-        return list(JOINT_NAMES)
+        names = list(JOINT_NAMES)
+        if self._has_gripper:
+            names.append("gripper")
+        return names
 
     def get_state(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        return self.q.copy(), np.zeros(self.num_joints), np.zeros(self.num_joints)
+        if self._has_gripper:
+            q = np.concatenate([self.arm.q, self.gripper.q])
+        else:
+            q = self.arm.q.copy()
+        dq = np.zeros_like(q)
+        tau = np.concatenate([self.arm._tau, self.gripper._tau]) if self._has_gripper else self.arm._tau.copy()
+        return q.copy(), dq.copy(), tau.copy()
 
     def disconnect(self) -> None:
         pass
@@ -47,6 +168,16 @@ class RebotArmClient:
         self.channel = channel
         self.arm = RebotArm(hw_yaml=hw_yaml)
         self._connected = False
+
+    @property
+    def arm_group(self):
+        """arm 关节组（JointGroup），用于发送 MIT / POS_VEL 命令。"""
+        return self.arm.arm
+
+    @property
+    def gripper_group(self):
+        """gripper 关节组（JointGroup），用于发送 MIT / POS_VEL 命令。"""
+        return self.arm.gripper
 
     def check_can(self) -> bool:
         """检查指定的 CAN 接口是否已启动。"""
@@ -217,6 +348,21 @@ class RealToSimBridge:
         """是否为模拟模式（无真实硬件连接）。"""
         return self._mock_mode
 
+    @property
+    def gripper_scale(self) -> float:
+        """真实 gripper 电机位置到 MuJoCo 夹爪直线位移的缩放系数。"""
+        return self._gripper_scale
+
+    @property
+    def gripper_sim_addrs(self) -> list[int]:
+        """MuJoCo 中左右夹爪滑动关节的 qpos 地址。"""
+        return list(self._gripper_sim_addrs)
+
+    @property
+    def gripper_real_index(self) -> int | None:
+        """真实机器人关节列表中 gripper 电机的索引。"""
+        return self._gripper_real_index
+
     def read_real_state(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """读取真实机械臂完整状态。
 
@@ -229,6 +375,30 @@ class RealToSimBridge:
             np.asarray(dq_full, dtype=float),
             np.asarray(tau_full, dtype=float),
         )
+
+    def get_arm_q_real(self) -> np.ndarray:
+        """读取真实机械臂 6 个臂关节位置。"""
+        q_full, _, _ = self.read_real_state()
+        return q_full[self._real_indices].copy()
+
+    def get_arm_dq_real(self) -> np.ndarray:
+        """读取真实机械臂 6 个臂关节速度。"""
+        _, dq_full, _ = self.read_real_state()
+        return dq_full[self._real_indices].copy()
+
+    def get_gripper_q_real(self) -> float | None:
+        """读取真实夹爪电机位置（rad）。模拟模式下返回 0.0。"""
+        if self._gripper_real_index is None:
+            return None
+        q_full, _, _ = self.read_real_state()
+        return float(q_full[self._gripper_real_index])
+
+    def get_gripper_dq_real(self) -> float | None:
+        """读取真实夹爪电机速度（rad/s）。"""
+        if self._gripper_real_index is None:
+            return None
+        _, dq_full, _ = self.read_real_state()
+        return float(dq_full[self._gripper_real_index])
 
     def sync(self, q_real: np.ndarray | None = None) -> None:
         """将真实状态写入仿真。

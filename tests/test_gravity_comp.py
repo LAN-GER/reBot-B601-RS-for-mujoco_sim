@@ -24,8 +24,10 @@ def test_gravity_comp_no_actuator() -> None:
     # 确认没有 position actuator
     assert robot.model.nu == 0, "Model should have no actuators for gravity comp test"
 
-    kp_hold = np.full(nv, 8.0)
-    kd_hold = np.full(nv, 2.4)
+    kp_hold = np.zeros(nv)
+    kd_hold = np.zeros(nv)
+    kp_hold[:N_ARM_JOINTS] = 8.0
+    kd_hold[:N_ARM_JOINTS] = 2.4
     q_hold = np.zeros(nq)
     q_hold[:N_ARM_JOINTS] = q0
 
@@ -35,7 +37,7 @@ def test_gravity_comp_no_actuator() -> None:
         tau_g = gc.compute(q[:N_ARM_JOINTS])
         mujoco.mj_forward(robot.model, robot.data)
         tau_dyn = robot.data.qfrc_bias[:nv].copy()
-        tau = tau_dyn + kp_hold * (q_hold - q) - kd_hold * qd
+        tau = tau_dyn + kp_hold * (q_hold[:nv] - q[:nv]) - kd_hold * qd
         robot.data.qfrc_applied[:N_ARM_JOINTS] = tau[:N_ARM_JOINTS]
         mujoco.mj_step(robot.model, robot.data)
 
