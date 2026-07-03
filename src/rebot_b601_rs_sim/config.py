@@ -18,9 +18,9 @@ RS_URDF_PATH = (
     SDK_DIR / "urdf" / "00-arm-rs_asm-v3" / "urdf" / "00-arm-rs_asm-v3.urdf"
 )
 
-# MuJoCo 模型路径
-ROBOT_XML_PATH = PROJECT_ROOT / "assets" / "robot" / "rebot.xml"
-SCENE_PATH = PROJECT_ROOT / "assets" / "robot" / "scene.xml"
+# MuJoCo 模型路径（使用手动转换的 XML）
+ROBOT_XML_PATH = PROJECT_ROOT / "assets" / "00_arm_rs_asm_v3" / "00_arm_rs_asm_v3.xml"
+SCENE_PATH = PROJECT_ROOT / "assets" / "00_arm_rs_asm_v3" / "scene.xml"
 MJCF_PATH = SCENE_PATH  # 默认加载带场景的完整模型
 
 # 末端执行器帧名称（需与 SDK 配置一致）

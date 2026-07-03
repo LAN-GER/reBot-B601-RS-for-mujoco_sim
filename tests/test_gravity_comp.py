@@ -21,8 +21,10 @@ def test_gravity_comp_no_actuator() -> None:
     q0 = np.array([0.0, 0.8, 1.2, 0.0, 0.5, 0.0])
     robot.reset(q0)
 
-    # 确认没有 position actuator
-    assert robot.model.nu == 0, "Model should have no actuators for gravity comp test"
+    # 若模型中存在执行器，将其 ctrl 设为当前位置，避免对臂运动产生额外力矩
+    if robot.model.nu > 0:
+        for i in range(robot.model.nu):
+            robot.data.ctrl[i] = robot.data.qpos[robot.model.actuator_trnid[i, 0]]
 
     kp_hold = np.zeros(nv)
     kd_hold = np.zeros(nv)

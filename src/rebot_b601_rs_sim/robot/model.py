@@ -17,18 +17,13 @@ class RobotModel:
     def __init__(self, xml_path: str | Path | None = None) -> None:
         """
         Args:
-            xml_path: MuJoCo MJCF/XML 文件路径。默认使用 ``assets/robot/scene.xml``。
+            xml_path: MuJoCo MJCF/XML 文件路径。默认使用 ``assets/00_arm_rs_asm_v3/scene.xml``。
         """
         self.xml_path = Path(xml_path) if xml_path is not None else MJCF_PATH
         if not self.xml_path.exists():
             raise FileNotFoundError(f"MuJoCo model not found: {self.xml_path}")
 
-        # 若加载场景文件，确保其中 include 的 rebot.xml 已生成
-        if self.xml_path.name == "scene.xml" and not ROBOT_XML_PATH.exists():
-            from ..utils.mujoco_utils import generate_rebot_xml
-
-            generate_rebot_xml(ROBOT_XML_PATH)
-
+        # 直接使用用户手动转换的 XML，不再从 URDF 自动生成
         self.model = mujoco.MjModel.from_xml_path(str(self.xml_path))
         self.data = mujoco.MjData(self.model)
 

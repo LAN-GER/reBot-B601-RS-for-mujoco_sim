@@ -262,7 +262,7 @@ def main() -> None:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path(__file__).resolve().parents[1] / "assets" / "robot" / "rebot_simplified.xml",
+        default=Path(__file__).resolve().parents[1] / "assets" / "00_arm_rs_asm_v3" / "rebot_simplified.xml",
         help="Output MJCF path.",
     )
     args = parser.parse_args()

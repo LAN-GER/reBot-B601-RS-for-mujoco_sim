@@ -27,8 +27,8 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from rebot_b601_rs_sim.config import SCENE_PATH
 from rebot_b601_rs_sim.control.gravity_compensation import GravityCompensator
-from rebot_b601_rs_sim.utils import load_mujoco_model
 
 
 def input_thread_fn(cmd_queue: queue.Queue, stop_event: threading.Event) -> None:
@@ -45,7 +45,8 @@ def input_thread_fn(cmd_queue: queue.Queue, stop_event: threading.Event) -> None
 
 def main() -> None:
     # ── 加载模型 ──────────────────────────────────────────────────────────────
-    mj_model, mj_data = load_mujoco_model()
+    mj_model = mujoco.MjModel.from_xml_path(str(SCENE_PATH))
+    mj_data = mujoco.MjData(mj_model)
     N_ARM_JOINTS = 6
     N_GRIPPER_JOINTS = 2
     N_ROBOT_JOINTS = N_ARM_JOINTS + N_GRIPPER_JOINTS  # 8

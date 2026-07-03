@@ -20,8 +20,8 @@
 ### 模型与坐标系
 
 - B601-RS URDF：`third_party/reBotArm_control_py/urdf/00-arm-rs_asm-v3/urdf/00-arm-rs_asm-v3.urdf`
-- MuJoCo 机器人模型：`assets/robot/rebot.xml`（由 `scripts/convert_urdf_to_mjcf.py` 生成）
-- MuJoCo 场景：`assets/robot/scene.xml`（包含 `rebot.xml`、地面、灯光、坐标轴）
+- MuJoCo 机器人模型：`assets/00_arm_rs_asm_v3/00_arm_rs_asm_v3.xml`（用户手动从 URDF 转换）
+- MuJoCo 场景：`assets/00_arm_rs_asm_v3/scene.xml`（包含机器人、地面、灯光、坐标轴、台面、方块）
 - 受控关节名称：`joint1` ~ `joint6`（见 `src/rebot_b601_rs_sim/config.py`）
 - 末端执行器帧：`gripper_end`
 - 关节单位：弧度（rad）
@@ -35,16 +35,13 @@
 - `examples/`：可独立运行的示例脚本
 - `tests/`：pytest 单元测试
 
-### MuJoCo 模型生成
+### MuJoCo 模型
 
-- `assets/robot/rebot.xml` 由 `rebot_b601_rs_sim.utils.mujoco_utils.generate_rebot_xml()`
-  自动从 SDK 的 B601-RS URDF 生成（通过 MuJoCo 的 `mj_saveLastXML`）。
-- `assets/robot/scene.xml` 包含 `rebot.xml` 以及场景元素（地面、灯光、坐标轴）。
-- `rebot.xml` 已加入 `.gitignore`，不应提交到仓库。
-- 不要直接手写修改 `rebot.xml`；如需调整，应修改 URDF 或 `scene.xml`，
-  然后删除 `rebot.xml` 让它在下次加载时自动重新生成。
-- `scripts/convert_urdf_to_mjcf.py` 仅用于生成备用的简化 capsule 模型
-  `rebot_simplified.xml`，主流程不使用。
+- 主流程直接使用 `assets/00_arm_rs_asm_v3/00_arm_rs_asm_v3.xml` 与
+  `assets/00_arm_rs_asm_v3/scene.xml`。
+- 这两个 XML 由用户手动从 SDK 的 B601-RS URDF 转换/维护，**不再**在运行时从
+  URDF 自动生成。
+- `scripts/convert_urdf_to_mjcf.py` 仅作为历史备用脚本保留，当前主流程不使用。
 
 ### 命名风格
 
@@ -59,4 +56,4 @@
 ### 提交前检查
 
 - 确保 `third_party/` 下没有新增被跟踪文件。
-- 确保 `assets/robot/b601_rs.xml` 与脚本生成结果一致。
+- 确保 `assets/00_arm_rs_asm_v3/` 下的 XML 与当前主流程一致。

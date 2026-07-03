@@ -60,26 +60,14 @@ python -c "import mujoco, pinocchio, numpy; print('MuJoCo:', mujoco.__version__,
 pytest tests/
 ```
 
-首次运行测试时，`assets/robot/rebot.xml` 会自动从 SDK 的 B601-RS URDF 生成。
+### 5. 加载 MuJoCo 模型
 
-### 5. 生成/加载 MuJoCo 模型
+本工程直接使用用户手动转换的 MuJoCo XML：
 
-`assets/robot/rebot.xml` 是 MuJoCo 机器人模型，由 `rebot_b601_rs_sim.utils.load_mujoco_model()`
-自动从 URDF 通过 `mj_saveLastXML` 生成；`assets/robot/scene.xml` 会包含它，并添加地面、灯光、世界坐标轴等场景元素。
+- 机器人模型：`assets/00_arm_rs_asm_v3/00_arm_rs_asm_v3.xml`
+- 场景模型：`assets/00_arm_rs_asm_v3/scene.xml`（包含机器人、地面、灯光、世界坐标轴、台面、抓取方块）
 
-通常无需手动生成模型，运行任意示例或调用 `load_mujoco_model()` 时即会自动创建。
-
-如需强制重新生成：
-
-```bash
-python -c "from rebot_b601_rs_sim.utils import generate_rebot_xml; generate_rebot_xml()"
-```
-
-如需清理自动生成的模型：
-
-```bash
-rm assets/robot/rebot.xml
-```
+本工程不再使用 `assets/robot/` 目录；所有 MuJoCo XML 均来自 `assets/00_arm_rs_asm_v3/`。
 
 ## 运行示例
 
@@ -191,7 +179,7 @@ reBot-B601-RS-for-mujoco_sim/
 ## 注意事项
 
 - `third_party/reBotArm_control_py` 由脚本自动拉取，不会提交到本仓库。
-- `assets/robot/rebot.xml` 由 `load_mujoco_model()` 自动从 URDF 生成，已加入 `.gitignore`，不会提交到本仓库。
+- `assets/00_arm_rs_asm_v3/` 下的 MuJoCo XML 由用户手动维护，是本仓库的主要模型文件。
 - `04_real_to_sim.py` 已接入 `reBotArm_control_py` 的 `RebotArm`：连接真实机械臂前请确认 CAN 接口已启动；无硬件时会自动回退到模拟模式。
 - `05_sim_to_real.py` 当前为接口桩实现，接入硬件后需补充控制指令下发逻辑。
 - `scripts/convert_urdf_to_mjcf.py` 仅作为备用的简化 capsule 模型生成脚本，主流程不使用。
@@ -204,7 +192,7 @@ reBot-B601-RS-for-mujoco_sim/
 若直接使用 `python -c` 运行，需手动设置 `PYTHONPATH=src`：
 
 ```bash
-PYTHONPATH=src python -c "from rebot_b601_rs_sim.utils import load_mujoco_model"
+PYTHONPATH=src python -c "import mujoco; from rebot_b601_rs_sim.config import SCENE_PATH; m = mujoco.MjModel.from_xml_path(str(SCENE_PATH)); print('loaded', m.nq, m.nv)"
 ```
 
 ### Q: 导入 Pinocchio 时报错 `A module that was compiled using NumPy 1.x cannot be run in NumPy 2.x`

@@ -28,8 +28,8 @@ import pinocchio as pin
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from rebot_b601_rs_sim.config import SCENE_PATH
 from rebot_b601_rs_sim.control.ik import IKSolver
-from rebot_b601_rs_sim.utils import load_mujoco_model
 
 # 机械臂关节数（不含 gripper）
 N_ARM_JOINTS = 6
@@ -57,7 +57,8 @@ def min_jerk_interpolation(q0: np.ndarray, q1: np.ndarray, t: float) -> np.ndarr
 
 def main() -> None:
     # ── 加载模型 ──────────────────────────────────────────────────────────────
-    mj_model, mj_data = load_mujoco_model()
+    mj_model = mujoco.MjModel.from_xml_path(str(SCENE_PATH))
+    mj_data = mujoco.MjData(mj_model)
     nq_total = mj_model.nq
 
     ik = IKSolver()

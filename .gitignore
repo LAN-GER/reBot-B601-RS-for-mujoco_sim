@@ -20,9 +20,7 @@ env/
 # Third-party SDK (cloned by scripts/setup_third_party.sh)
 third_party/
 
-# MuJoCo auto-generated model / logs
-assets/robot/rebot.xml
-assets/robot/rebot_simplified.xml
+# MuJoCo logs / backups
 *.mjcf.bak
 *.log
 
