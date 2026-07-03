@@ -153,16 +153,17 @@ reBot-B601-RS-for-mujoco_sim/
 ├── third_party/
 │   └── reBotArm_control_py/           # git clone 的 SDK（不提交）
 ├── assets/
-│   └── robot/
-│       ├── rebot.xml                  # 自动生成的 MuJoCo 机器人模型（不提交）
-│       └── scene.xml                  # MuJoCo 场景（含地面、灯光、坐标轴）
+│   └── 00_arm_rs_asm_v3/              # 用户手动转换的 MuJoCo 模型
+│       ├── 00_arm_rs_asm_v3.xml       # 机器人模型
+│       ├── scene.xml                  # 场景（含地面、灯光、坐标轴、台面、方块）
+│       └── meshes/                    # STL 网格文件
 ├── src/rebot_b601_rs_sim/
 │   ├── config.py                      # 路径与全局配置
 │   ├── robot/                         # MuJoCo 模型/状态封装
 │   ├── control/                       # IK、重力补偿、控制器
 │   ├── bridge/                        # Real-to-Sim / Sim-to-Real
 │   ├── simulation/                    # 仿真主循环
-│   └── utils/                         # 工具函数（模型加载等）
+│   └── utils/                         # 工具函数
 ├── examples/                          # 示例脚本
 └── tests/                             # 单元测试
 ```
