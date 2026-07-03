@@ -300,14 +300,19 @@ class RealToSimBridge:
         self,
         robot: RobotModel,
         arm_interface: RebotArmClient | MockRealRobot | None = None,
-        gripper_scale: float = 0.00830,
+        gripper_scale: float = 0.05 / 6.178,
+        gripper_offset: float = -6.3177,
     ) -> None:
         """
         Args:
             robot: MuJoCo 机器人模型封装。
             arm_interface: 真实机械臂客户端。若为 None，则使用模拟模式。
             gripper_scale: 真实 gripper 电机位置到 MuJoCo 夹爪直线位移的缩放系数。
-                真实 gripper 位置（rad）乘以该系数得到 joint_left/joint_right 的位移（m）。
+                当前 XML 中 joint_left/joint_right 范围为 0~0.05 m；
+                真实电机张开约 -8°、闭合约 -362°，行程约 6.178 rad，
+                因此默认值为 0.05/6.178 ≈ 0.00809。
+            gripper_offset: 真实 gripper 电机对应 MuJoCo 夹爪闭合（disp=0）的角度。
+                默认 -6.3177 rad（-362°）。
         """
         import mujoco
 
@@ -315,6 +320,7 @@ class RealToSimBridge:
         self.arm_interface = arm_interface
         self._mock_mode = arm_interface is None or getattr(arm_interface, "is_mock", False)
         self._gripper_scale = gripper_scale
+        self._gripper_offset = gripper_offset
 
         if arm_interface is None:
             self.arm_interface = MockRealRobot()
@@ -352,6 +358,11 @@ class RealToSimBridge:
     def gripper_scale(self) -> float:
         """真实 gripper 电机位置到 MuJoCo 夹爪直线位移的缩放系数。"""
         return self._gripper_scale
+
+    @property
+    def gripper_offset(self) -> float:
+        """真实 gripper 电机对应 MuJoCo 夹爪闭合（disp=0）的角度。"""
+        return self._gripper_offset
 
     @property
     def gripper_sim_addrs(self) -> list[int]:
@@ -437,7 +448,7 @@ class RealToSimBridge:
         # 同步夹爪：真实 gripper 电机位置 -> MuJoCo 左右滑动位移
         if self._gripper_real_index is not None and q_full is not None:
             gripper_pos = q_full[self._gripper_real_index]
-            disp = self._gripper_scale * gripper_pos
+            disp = self._gripper_scale * (gripper_pos - self._gripper_offset)
             # 裁剪到各关节允许范围，避免负值或超限
             for addr in self._gripper_sim_addrs:
                 if addr < self.robot.model.nq:

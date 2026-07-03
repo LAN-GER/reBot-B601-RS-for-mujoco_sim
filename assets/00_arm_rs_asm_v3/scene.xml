@@ -4,6 +4,7 @@
   <!-- 禁用相邻连杆之间的自碰撞，避免 URDF mesh 轻微重叠导致关节被锁定 -->
   <contact>
     <exclude body1="world" body2="link1"/>
+    <exclude body1="base_link" body2="link1"/>
     <exclude body1="link1" body2="link2"/>
     <exclude body1="link2" body2="link3"/>
     <exclude body1="link2" body2="link5"/>

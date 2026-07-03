@@ -29,7 +29,7 @@
     --force-scale 0.05  MuJoCo 接触力（N）到真实夹爪力矩（N·m）的缩放。
                         越大，抓到方块时夹得越紧。
     --tau-gripper-limit 1.0  夹爪反馈力矩上限（N·m）。
-    --gripper-scale 0.00830  真实夹爪电机位置（rad）到 MuJoCo 直线位移（m）的缩放。
+    --gripper-scale 0.00833  真实夹爪电机位置（rad）到 MuJoCo 直线位移（m）的缩放。
 
 用法示例：
     # 连接真实机械臂（需先启动 CAN 接口）
@@ -79,7 +79,7 @@ from rebot_b601_rs_sim.robot.model import RobotModel
 # 按关节 1~6 的重力补偿缩放系数。
 # 如果某个关节下坠，直接把对应位置的数值改大即可，例如：
 # GRAVITY_SCALE = np.array([1.0, 1.2, 1.0, 1.0, 1.0, 1.0])
-GRAVITY_SCALE = np.array([1.0, 1.65, 1.65, 1.3, 1.0, 1.0])
+GRAVITY_SCALE = np.array([1.0, 1.55, 1.6, 1.3, 1.0, 1.0])
 
 
 def _limit_array(arr: np.ndarray, limit: float | np.ndarray) -> np.ndarray:
@@ -134,9 +134,17 @@ def main() -> None:
     parser.add_argument(
         "--gripper-scale",
         type=float,
-        default=0.00830,
+        default=0.05 / 6.178,
         help="Scale from real gripper motor position (rad) to MuJoCo slide displacement (m). "
-             "Default: 0.00830",
+             "With joint_left/joint_right range 0~0.05 m and real gripper ~-362deg~-8deg, "
+             "scale = 0.05 / 6.178 = 0.00809. Default: 0.00809",
+    )
+    parser.add_argument(
+        "--gripper-offset",
+        type=float,
+        default=-6.3177,
+        help="Real gripper motor angle (rad) that corresponds to fully closed (disp=0). "
+             "Default: -6.3177 rad (-362deg)",
     )
     parser.add_argument(
         "--force-scale",
@@ -145,8 +153,8 @@ def main() -> None:
         help="Scale from MuJoCo contact force (N) to real gripper feedback torque (N·m). "
              "Tune on real hardware. Default: 0.05",
     )
-    parser.add_argument("--kp-arm", type=float, default=8.0, help="Arm MIT kp (default: 8.0)")
-    parser.add_argument("--kd-arm", type=float, default=1.0, help="Arm MIT kd (default: 1.0)")
+    parser.add_argument("--kp-arm", type=float, default=0.0, help="Arm MIT kp (default: 0.0). Set to 0 for pure gravity compensation so the arm can be dragged.")
+    parser.add_argument("--kd-arm", type=float, default=0.2, help="Arm MIT kd (default: 0.2). Small damping for stability while dragging.")
     parser.add_argument(
         "--gravity-scale",
         type=_parse_gravity_scale,
@@ -187,8 +195,10 @@ def main() -> None:
     if args.mock:
         print("[mock mode] No real hardware connected.")
         # mock 模式下包含 gripper，便于测试夹爪反馈
-        # 初始位姿让夹爪位于方块正上方可抓取位置，夹爪 45deg 刚好能夹住方块
-        q0_mock = np.array([0.0, 1.17, 0.51, 0.0, 0.0, 0.0, np.deg2rad(45.0)])
+        # 初始位姿让夹爪位于方块正上方可抓取位置
+        # 真实 gripper 张开约 -8°(~0.05m)、闭合约 -362°(0m)；
+        # mock 用 -220° 对应单侧约 20mm，总开合约 40mm，可夹住 30mm 方块
+        q0_mock = np.array([0.0, 1.17, 0.51, 0.0, 0.0, 0.0, np.deg2rad(-220.0)])
         arm_interface = MockRealRobot(q0=q0_mock, num_joints=7, has_gripper=True)
     else:
         arm_interface = create_real_arm(
@@ -207,7 +217,12 @@ def main() -> None:
         print("[WARN] Real robot configuration does not include a gripper; gripper feedback disabled.")
         return
 
-    bridge = RealToSimBridge(robot, arm_interface=arm_interface, gripper_scale=args.gripper_scale)
+    bridge = RealToSimBridge(
+        robot,
+        arm_interface=arm_interface,
+        gripper_scale=args.gripper_scale,
+        gripper_offset=args.gripper_offset,
+    )
     grasp_feedback = GraspFeedback(robot, force_scale=args.force_scale)
     gravity_comp = GravityCompensator()
 
@@ -231,6 +246,8 @@ def main() -> None:
     print(f"  gravity_scale per joint: {args.gravity_scale.round(3).tolist()}")
     print(f"  gripper kp/kd={args.kp_gripper}/{args.kd_gripper}")
     print(f"  force_scale={args.force_scale}, tau limits: arm={args.tau_arm_limit}, gripper={args.tau_gripper_limit}")
+    if not args.no_hold:
+        print("  [HINT] If the arm feels locked, run with --no-hold to disable motor holding torque.")
     print("Close the viewer or press Ctrl+C to stop.")
 
     def step_loop() -> tuple[float, float, dict]:
@@ -247,7 +264,7 @@ def main() -> None:
 
         # 3. 计算并发送臂重力补偿命令
         tau_g = args.gravity_scale * gravity_comp.compute(q_arm)
-        tau_arm = tau_g + args.kp_arm * (q_arm - q_arm) - args.kd_arm * dq_arm
+        tau_arm = tau_g - args.kd_arm * dq_arm
         tau_arm = _limit_array(tau_arm, args.tau_arm_limit)
         arm_group.send_mit(
             pos=q_arm,

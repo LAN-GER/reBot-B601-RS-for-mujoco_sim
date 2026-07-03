@@ -15,14 +15,13 @@ def test_grasp_feedback_detects_contact() -> None:
     robot = RobotModel()
     gf = GraspFeedback(robot)
 
-    # 把机械臂放到方块正上方可抓取的位置（台面高度减半后）
-    q_arm = np.array([0.0, 1.17, 0.51, 0.0, 0.0, 0.0])
+    # 把机械臂放到方块正上方可抓取的位置
+    q_arm = np.array([0.0, 1.0, 0.4, 0.0, 0.0, 0.0])
     robot.set_q(q_arm, forward=True)
 
     # 将夹爪设置为较小的开合（闭合趋势），并让 MuJoCo 物理稳定
-    # 真实 gripper 0~345deg 对应 MuJoCo 0~50mm；这里用 45deg -> 约 6.2mm 单侧
-    gripper_rad = np.deg2rad(45.0)
-    disp = 0.00830 * gripper_rad
+    # 单侧 5mm，总开合约 10mm，应能夹住 30mm 方块
+    disp = 0.005
     robot.data.qpos[6] = disp  # joint_left
     robot.data.qpos[7] = disp  # joint_right
 
@@ -42,12 +41,11 @@ def test_grasp_feedback_no_contact_when_open() -> None:
     robot = RobotModel()
     gf = GraspFeedback(robot)
 
-    q_arm = np.array([0.0, 1.17, 0.51, 0.0, 0.0, 0.0])
+    q_arm = np.array([0.0, 1.0, 0.4, 0.0, 0.0, 0.0])
     robot.set_q(q_arm, forward=True)
 
-    # 夹爪张开：30deg -> 约 4.3mm 单侧，应不会碰到方块
-    gripper_rad = np.deg2rad(30.0)
-    disp = 0.00830 * gripper_rad
+    # 夹爪张开：单侧 40mm，总开合约 80mm，应不会碰到 30mm 方块
+    disp = 0.04
     robot.data.qpos[6] = disp
     robot.data.qpos[7] = disp
 

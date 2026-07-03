@@ -38,9 +38,7 @@ def run_with_viewer(robot: RobotModel) -> None:
 
     dt = float(robot.model.opt.timestep)
     with mujoco.viewer.launch_passive(robot.model, robot.data) as viewer:
-        for _ in range(500):
-            if not viewer.is_running():
-                break
+        while viewer.is_running():
             robot.step()
             viewer.sync()
             time.sleep(dt)

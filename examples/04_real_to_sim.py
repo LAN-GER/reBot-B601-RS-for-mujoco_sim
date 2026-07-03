@@ -61,10 +61,17 @@ def main() -> None:
     parser.add_argument(
         "--gripper-scale",
         type=float,
-        default=0.00830,
+        default=0.05 / 6.178,
         help="Scale from real gripper motor position (rad) to MuJoCo slide displacement (m). "
-             "Calibrated for 345deg motor travel -> 50mm per-side gripper opening. "
-             "Default: 0.00830",
+             "Calibrated for ~354deg motor travel (-362deg closed -> -8deg open). "
+             "Default: 0.00809 (0.05 m / 6.178 rad)",
+    )
+    parser.add_argument(
+        "--gripper-offset",
+        type=float,
+        default=-6.3177,
+        help="Real gripper motor angle (rad) that corresponds to fully closed (disp=0). "
+             "Default: -6.3177 rad (-362deg)",
     )
     args = parser.parse_args()
 
@@ -74,7 +81,7 @@ def main() -> None:
 
     if args.mock:
         print("[mock mode] No real hardware connected, using synthetic joint state.")
-        arm_interface = MockRealRobot()
+        arm_interface = MockRealRobot(q0=np.zeros(7), num_joints=7, has_gripper=True)
     else:
         arm_interface = create_real_arm(
             hw_yaml=args.hw_yaml,
@@ -89,12 +96,18 @@ def main() -> None:
             print(f"Real robot connected via {args.can}.")
 
     with RealToSimBridge(
-        robot, arm_interface=arm_interface, gripper_scale=args.gripper_scale
+        robot,
+        arm_interface=arm_interface,
+        gripper_scale=args.gripper_scale,
+        gripper_offset=args.gripper_offset,
     ) as bridge:
         if bridge.is_mock:
             t0 = time.time()
-            q_mock = np.zeros(6)
+            # mock 状态包含 6 个臂关节 + 1 个 gripper 关节，便于验证夹爪映射
+            q_mock = np.zeros(7)
+            has_gripper_mock = True
         else:
+            has_gripper_mock = False
             q_real, _, _ = bridge.read_real_state()
             bridge.sync()
             print(
@@ -112,9 +125,22 @@ def main() -> None:
             nonlocal q_mock
             if bridge.is_mock:
                 elapsed = time.time() - t0
-                q_mock = 0.3 * np.sin(2.0 * elapsed + np.arange(6))
+                q_mock[:6] = 0.3 * np.sin(2.0 * elapsed + np.arange(6))
+                # 让 mock gripper 在真实电机范围 -362°~-8° 之间周期性开合，验证映射
+                q_mock[6] = np.deg2rad(-185.0 - 177.0 * np.sin(0.5 * elapsed))
                 bridge.sync(q_mock)
-                return q_mock, None, None, None
+                gripper_pos = float(q_mock[6])
+                left_disp = (
+                    float(robot.data.qpos[bridge._gripper_sim_addrs[0]])
+                    if len(bridge._gripper_sim_addrs) >= 1
+                    else None
+                )
+                right_disp = (
+                    float(robot.data.qpos[bridge._gripper_sim_addrs[1]])
+                    if len(bridge._gripper_sim_addrs) >= 2
+                    else None
+                )
+                return q_mock[:6], gripper_pos, left_disp, right_disp
 
             q_real, _, _ = bridge.read_real_state()
             bridge.sync(q_real)
@@ -157,8 +183,14 @@ def main() -> None:
                 while True:
                     q_now, gripper_pos, left_disp, right_disp = step_sync()
                     if bridge.is_mock:
+                        q_sim = robot.get_q()
+                        gp = f"{np.degrees(q_mock[6]):.1f}" if has_gripper_mock else "N/A"
+                        ld = f"{left_disp*1000:.1f}" if left_disp is not None else "N/A"
+                        rd = f"{right_disp*1000:.1f}" if right_disp is not None else "N/A"
                         print(
-                            f"  Sim q (deg): {np.degrees(q_now).round(2)}",
+                            f"  Sim q (deg): {np.degrees(q_now).round(2)} | "
+                            f"sim q (deg): {np.degrees(q_sim).round(2)} | "
+                            f"gripper={gp}deg L={ld}mm R={rd}mm",
                             end="\r",
                             flush=True,
                         )

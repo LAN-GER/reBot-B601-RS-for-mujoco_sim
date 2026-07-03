@@ -71,8 +71,8 @@ def main() -> None:
         action="store_true",
         help="Disable motor holding torque after enable (allows manual dragging)",
     )
-    parser.add_argument("--kp", type=float, default=8.0, help="MIT kp (default: 8.0)")
-    parser.add_argument("--kd", type=float, default=1.0, help="MIT kd (default: 1.0)")
+    parser.add_argument("--kp", type=float, default=0.0, help="MIT kp (default: 0.0). Set to 0 for pure gravity compensation so the arm can be dragged.")
+    parser.add_argument("--kd", type=float, default=0.2, help="MIT kd (default: 0.2). Small damping for stability while dragging.")
     parser.add_argument(
         "--tau-limit",
         type=float,
@@ -112,6 +112,8 @@ def main() -> None:
     print(f"  kp/kd={args.kp}/{args.kd}")
     print(f"  gravity_scale per joint: {GRAVITY_SCALE.round(3).tolist()}")
     print(f"  tau_limit={args.tau_limit}")
+    if not args.no_hold:
+        print("  [HINT] If the arm feels locked, run with --no-hold to disable motor holding torque.")
     print("Press Ctrl+C to stop.")
 
     try:
@@ -124,7 +126,7 @@ def main() -> None:
 
             # 计算重力补偿力矩并按关节缩放
             tau_g = GRAVITY_SCALE * gravity_comp.compute(q_arm)
-            tau = tau_g + args.kp * (q_arm - q_arm) - args.kd * dq_arm
+            tau = tau_g - args.kd * dq_arm
             tau = _limit_array(tau, args.tau_limit)
 
             # 发送 MIT 命令
