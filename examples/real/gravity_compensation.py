@@ -13,6 +13,12 @@
 
 真实机械臂连接前请确保：
     sudo ip link set can0 up type can bitrate 500000
+    
+如果 CAN 接口已启动但速率不对，可先关闭再重新设置：
+    sudo ip link set can0 down 2>/dev/null
+    sudo ip link set can0 type can bitrate 1000000 restart-ms 100
+    sudo ip link set can0 up
+    ip -details link show can0
 
 交互提示：
     - 运行后用手拖动机械臂，松手后关节会悬浮在当前位置。
@@ -40,7 +46,7 @@ from rebot_b601_rs_sim.control.gravity_compensation import GravityCompensator
 # 按关节 1~6 的重力补偿缩放系数。
 # 如果某个关节下坠，直接把对应位置的数值改大即可，例如：
 # GRAVITY_SCALE = np.array([1.0, 1.2, 1.0, 1.0, 1.0, 1.0])
-GRAVITY_SCALE = np.array([1.0, 1.65, 1.65, 1.3, 1.0, 1.0])
+GRAVITY_SCALE = np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
 
 
 def _limit_array(arr: np.ndarray, limit: float) -> np.ndarray:

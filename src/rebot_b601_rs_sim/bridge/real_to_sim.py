@@ -300,8 +300,8 @@ class RealToSimBridge:
         self,
         robot: RobotModel,
         arm_interface: RebotArmClient | MockRealRobot | None = None,
-        gripper_scale: float = 0.05 / 6.178,
-        gripper_offset: float = -6.3177,
+        gripper_scale: float = 0.05 / 6.021,
+        gripper_offset: float = 0.0,
     ) -> None:
         """
         Args:
@@ -309,10 +309,10 @@ class RealToSimBridge:
             arm_interface: 真实机械臂客户端。若为 None，则使用模拟模式。
             gripper_scale: 真实 gripper 电机位置到 MuJoCo 夹爪直线位移的缩放系数。
                 当前 XML 中 joint_left/joint_right 范围为 0~0.05 m；
-                真实电机张开约 -8°、闭合约 -362°，行程约 6.178 rad，
-                因此默认值为 0.05/6.178 ≈ 0.00809。
+                真实电机 0°~345°（0 rad ~ 6.021 rad）对应该范围，
+                因此默认值为 0.05/6.021 ≈ 0.00830。
             gripper_offset: 真实 gripper 电机对应 MuJoCo 夹爪闭合（disp=0）的角度。
-                默认 -6.3177 rad（-362°）。
+                默认 0.0 rad（0° 闭合）。
         """
         import mujoco
 

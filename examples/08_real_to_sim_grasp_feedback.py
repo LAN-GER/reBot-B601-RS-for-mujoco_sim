@@ -79,7 +79,7 @@ from rebot_b601_rs_sim.robot.model import RobotModel
 # 按关节 1~6 的重力补偿缩放系数。
 # 如果某个关节下坠，直接把对应位置的数值改大即可，例如：
 # GRAVITY_SCALE = np.array([1.0, 1.2, 1.0, 1.0, 1.0, 1.0])
-GRAVITY_SCALE = np.array([1.0, 1.55, 1.6, 1.3, 1.0, 1.0])
+GRAVITY_SCALE = np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
 
 
 def _limit_array(arr: np.ndarray, limit: float | np.ndarray) -> np.ndarray:
@@ -134,17 +134,17 @@ def main() -> None:
     parser.add_argument(
         "--gripper-scale",
         type=float,
-        default=0.05 / 6.178,
+        default=0.05 / 6.021,
         help="Scale from real gripper motor position (rad) to MuJoCo slide displacement (m). "
-             "With joint_left/joint_right range 0~0.05 m and real gripper ~-362deg~-8deg, "
-             "scale = 0.05 / 6.178 = 0.00809. Default: 0.00809",
+             "With joint_left/joint_right range 0~0.05 m and real gripper 0~345deg, "
+             "scale = 0.05 / 6.021 = 0.00830. Default: 0.00830",
     )
     parser.add_argument(
         "--gripper-offset",
         type=float,
-        default=-6.3177,
+        default=0.0,
         help="Real gripper motor angle (rad) that corresponds to fully closed (disp=0). "
-             "Default: -6.3177 rad (-362deg)",
+             "Default: 0.0 rad (0deg)",
     )
     parser.add_argument(
         "--force-scale",
@@ -196,9 +196,9 @@ def main() -> None:
         print("[mock mode] No real hardware connected.")
         # mock 模式下包含 gripper，便于测试夹爪反馈
         # 初始位姿让夹爪位于方块正上方可抓取位置
-        # 真实 gripper 张开约 -8°(~0.05m)、闭合约 -362°(0m)；
-        # mock 用 -220° 对应单侧约 20mm，总开合约 40mm，可夹住 30mm 方块
-        q0_mock = np.array([0.0, 1.17, 0.51, 0.0, 0.0, 0.0, np.deg2rad(-220.0)])
+        # 真实 gripper 0°闭合、345°张开；mock 用 220° 对应单侧约 32mm，
+        # 总开合约 64mm，可夹住 30mm 方块
+        q0_mock = np.array([0.0, 1.17, 0.51, 0.0, 0.0, 0.0, np.deg2rad(220.0)])
         arm_interface = MockRealRobot(q0=q0_mock, num_joints=7, has_gripper=True)
     else:
         arm_interface = create_real_arm(

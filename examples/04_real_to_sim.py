@@ -61,17 +61,17 @@ def main() -> None:
     parser.add_argument(
         "--gripper-scale",
         type=float,
-        default=0.05 / 6.178,
+        default=0.05 / 6.021,
         help="Scale from real gripper motor position (rad) to MuJoCo slide displacement (m). "
-             "Calibrated for ~354deg motor travel (-362deg closed -> -8deg open). "
-             "Default: 0.00809 (0.05 m / 6.178 rad)",
+             "Calibrated for 345deg motor travel (0deg closed -> 345deg open). "
+             "Default: 0.00830 (0.05 m / 6.021 rad)",
     )
     parser.add_argument(
         "--gripper-offset",
         type=float,
-        default=-6.3177,
+        default=0.0,
         help="Real gripper motor angle (rad) that corresponds to fully closed (disp=0). "
-             "Default: -6.3177 rad (-362deg)",
+             "Default: 0.0 rad (0deg)",
     )
     args = parser.parse_args()
 
@@ -126,8 +126,8 @@ def main() -> None:
             if bridge.is_mock:
                 elapsed = time.time() - t0
                 q_mock[:6] = 0.3 * np.sin(2.0 * elapsed + np.arange(6))
-                # 让 mock gripper 在真实电机范围 -362°~-8° 之间周期性开合，验证映射
-                q_mock[6] = np.deg2rad(-185.0 - 177.0 * np.sin(0.5 * elapsed))
+                # 让 mock gripper 在 0~345° 之间周期性开合，验证映射
+                q_mock[6] = np.deg2rad(172.5 + 172.5 * np.sin(0.5 * elapsed))
                 bridge.sync(q_mock)
                 gripper_pos = float(q_mock[6])
                 left_disp = (
