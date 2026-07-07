@@ -6,12 +6,10 @@ from .real_to_sim import (
     RealToSimBridge,
     create_real_arm,
 )
-from .sim_to_real import SimToRealBridge
 
 __all__ = [
     "MockRealRobot",
     "RebotArmClient",
     "RealToSimBridge",
     "create_real_arm",
-    "SimToRealBridge",
 ]

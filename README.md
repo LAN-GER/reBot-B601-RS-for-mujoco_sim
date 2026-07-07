@@ -83,9 +83,6 @@ python examples/04_real_to_sim.py
 
 # 无硬件时使用模拟模式
 python examples/04_real_to_sim.py --mock
-
-# 在仿真中计算控制指令并展示下发流程
-python examples/05_sim_to_real.py
 ```
 
 ### 带可视化窗口的基础示例
@@ -95,7 +92,6 @@ python examples/05_sim_to_real.py
 ```bash
 python examples/01_load_model.py --viewer
 python examples/04_real_to_sim.py --viewer
-python examples/05_sim_to_real.py --viewer
 ```
 
 > **注意**：`04_real_to_sim.py` 默认会尝试连接真实机械臂；在无硬件环境中请使用 `--mock` 或 `--headless`。
@@ -123,6 +119,16 @@ python examples/07_interactive_gravity_compensation_mujoco.py
 - `c` / `close`：闭合夹爪
 - `q` / `quit` / `exit`：退出
 
+### 真实机械臂 + MuJoCo 数字孪生（Real-to-Sim）
+
+```bash
+# 09：纯重力补偿 + 数字孪生同步（无夹爪力反馈，可自由开合夹爪）
+python examples/09_real_to_sim_gravity_comp.py --no-hold
+
+# 无硬件时使用模拟模式
+python examples/09_real_to_sim_gravity_comp.py --mock --headless
+```
+
 ### 运行测试
 
 ```bash
@@ -139,6 +145,7 @@ pytest tests/
 | `pytest tests/` | 运行单元测试 |
 | `python examples/06_interactive_ik_mujoco.py` | 交互式 IK |
 | `python examples/07_interactive_gravity_compensation_mujoco.py` | 交互式重力补偿 |
+| `python examples/09_real_to_sim_gravity_comp.py --no-hold` | 真机重力补偿 + 数字孪生同步 |
 
 ## 项目结构
 
@@ -182,7 +189,6 @@ reBot-B601-RS-for-mujoco_sim/
 - `third_party/reBotArm_control_py` 由脚本自动拉取，不会提交到本仓库。
 - `assets/00_arm_rs_asm_v3/` 下的 MuJoCo XML 由用户手动维护，是本仓库的主要模型文件。
 - `04_real_to_sim.py` 已接入 `reBotArm_control_py` 的 `RebotArm`：连接真实机械臂前请确认 CAN 接口已启动；无硬件时会自动回退到模拟模式。
-- `05_sim_to_real.py` 当前为接口桩实现，接入硬件后需补充控制指令下发逻辑。
 - `scripts/convert_urdf_to_mjcf.py` 仅作为备用的简化 capsule 模型生成脚本，主流程不使用。
 
 ## 常见问题

@@ -136,7 +136,11 @@
     <position name="joint4_servo" joint="joint4" kp="7" kv="1.0" ctrlrange="-1.57 1.57" forcelimited="true" forcerange="-14 14" />
     <position name="joint5_servo" joint="joint5" kp="7" kv="1.0" ctrlrange="-1.57 1.57" forcelimited="true" forcerange="-14 14" />
     <position name="joint6_servo" joint="joint6" kp="7" kv="1.0" ctrlrange="-3.14 3.14" forcelimited="true" forcerange="-14 14" />
-    <position name="joint_left_servo" joint="joint_left" kp="250" kv="25.0" ctrlrange="0 0.05" forcelimited="true" forcerange="-500 500" />
-    <position name="joint_right_servo" joint="joint_right" kp="250" kv="25.0" ctrlrange="0 0.05" forcelimited="true" forcerange="-500 500" />
+    <!-- Gripper actuators disabled: in real-to-sim the gripper is driven
+         kinematically from the real motor position, so MuJoCo should not
+         apply its own servo force (which would create artificial contact
+         forces and disturb the grasp feedback). -->
+    <!-- <position name="joint_left_servo" joint="joint_left" kp="250" kv="25.0" ctrlrange="0 0.05" forcelimited="true" forcerange="-500 500" /> -->
+    <!-- <position name="joint_right_servo" joint="joint_right" kp="250" kv="25.0" ctrlrange="0 0.05" forcelimited="true" forcerange="-500 500" /> -->
   </actuator>
 </mujoco>

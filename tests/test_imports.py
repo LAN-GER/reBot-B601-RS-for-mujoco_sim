@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 def test_package_imports() -> None:
     import rebot_b601_rs_sim
     from rebot_b601_rs_sim import config
-    from rebot_b601_rs_sim.bridge import RealToSimBridge, SimToRealBridge
+    from rebot_b601_rs_sim.bridge import RealToSimBridge
     from rebot_b601_rs_sim.control import (
         GravityCompensator,
         IKSolver,
@@ -28,7 +28,6 @@ def test_package_imports() -> None:
     assert JointPositionController is not None
     assert TorqueController is not None
     assert RealToSimBridge is not None
-    assert SimToRealBridge is not None
     assert RobotModel is not None
     assert RobotState is not None
     assert Simulator is not None
