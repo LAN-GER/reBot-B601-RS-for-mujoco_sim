@@ -1,6 +1,9 @@
 <mujoco model="rebot_scene">
   <include file="00_arm_rs_asm_v3.xml"/>
 
+  <!-- 提高接触求解精度，减少夹爪闭合时的抖动 -->
+  <option timestep="0.002" iterations="100" solver="Newton" integrator="Euler"/>
+
   <!-- 禁用相邻连杆之间的自碰撞，避免 URDF mesh 轻微重叠导致关节被锁定 -->
   <contact>
     <exclude body1="world" body2="link1"/>

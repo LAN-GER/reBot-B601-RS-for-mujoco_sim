@@ -34,6 +34,12 @@
 用法示例：
     # 连接真实机械臂（需先启动 CAN 接口）
     python examples/08_real_to_sim_grasp_feedback.py
+    
+如果 CAN 接口已启动但速率不对，可先关闭再重新设置：
+    sudo ip link set can0 down 2>/dev/null
+    sudo ip link set can0 type can bitrate 1000000 restart-ms 100
+    sudo ip link set can0 up
+    ip -details link show can0
 
     # 模拟模式（无硬件）
     python examples/08_real_to_sim_grasp_feedback.py --mock
