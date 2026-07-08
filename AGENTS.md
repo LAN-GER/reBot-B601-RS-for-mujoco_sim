@@ -32,6 +32,7 @@
 - `src/rebot_b601_rs_sim/control/`：IK、重力补偿、控制器
 - `src/rebot_b601_rs_sim/bridge/`：Real-to-Sim 桥接
 - `src/rebot_b601_rs_sim/simulation/`：仿真主循环
+- `src/rebot_b601_rs_sim/utils/`：通用工具函数（如数组裁剪、重力缩放解析、被动循环封装）
 - `examples/`：可独立运行的示例脚本
 - `tests/`：pytest 单元测试
 
