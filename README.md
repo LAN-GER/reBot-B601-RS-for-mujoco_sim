@@ -4,7 +4,7 @@
 
 底层运动学 / 逆运动学 / 动力学 / 重力补偿通过
 [reBotArm_control_py](https://github.com/vectorBH6/reBotArm_control_py.git)
-提供，本工程负责将其与 MuJoCo 仿真环境桥接，并预留 Real-to-Sim、Sim-to-Real 接口。
+提供，本工程负责将其与 MuJoCo 仿真环境桥接，并提供 Real-to-Sim 接口。
 
 ## 功能规划
 
@@ -14,7 +14,6 @@
 - [x] MuJoCo 中实现 IK（含交互式 Viewer 示例）
 - [x] MuJoCo 中实现重力补偿（含交互式 Viewer 示例）
 - [x] Real-to-Sim 接口（支持真实 B601-RS 硬件与模拟模式）
-- [x] Sim-to-Real 接口（示例为模拟模式）
 
 ## 环境要求
 
@@ -168,7 +167,7 @@ reBot-B601-RS-for-mujoco_sim/
 │   ├── config.py                      # 路径与全局配置
 │   ├── robot/                         # MuJoCo 模型/状态封装
 │   ├── control/                       # IK、重力补偿、控制器
-│   ├── bridge/                        # Real-to-Sim / Sim-to-Real
+│   ├── bridge/                        # Real-to-Sim 桥接
 │   ├── simulation/                    # 仿真主循环
 │   └── utils/                         # 工具函数
 ├── examples/                          # 示例脚本

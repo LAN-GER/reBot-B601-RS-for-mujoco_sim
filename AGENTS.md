@@ -5,7 +5,7 @@
 本工程为 reBot Arm B601-RS 机械臂的 **MuJoCo 仿真** 项目。
 底层运动学、逆运动学、动力学、重力补偿由第三方仓库
 `reBotArm_control_py` 提供；本仓库负责 MuJoCo 模型、仿真循环、
-控制接口以及 Real-to-Sim / Sim-to-Real 桥接。
+控制接口以及 Real-to-Sim 桥接。
 
 ## 重要约定
 
@@ -30,7 +30,7 @@
 
 - `src/rebot_b601_rs_sim/robot/`：MuJoCo 模型封装与状态读取
 - `src/rebot_b601_rs_sim/control/`：IK、重力补偿、控制器
-- `src/rebot_b601_rs_sim/bridge/`：Real-to-Sim / Sim-to-Real
+- `src/rebot_b601_rs_sim/bridge/`：Real-to-Sim 桥接
 - `src/rebot_b601_rs_sim/simulation/`：仿真主循环
 - `examples/`：可独立运行的示例脚本
 - `tests/`：pytest 单元测试
@@ -53,7 +53,26 @@
 - 运行测试：`pytest tests/`
 - 新增模块建议补充基础导入/接口测试。
 
+### 当前示例与已删除模块
+
+- 保留示例：`01_load_model.py`、`04_real_to_sim.py`、`06_interactive_ik_mujoco.py`、
+  `07_interactive_gravity_compensation_mujoco.py`、`09_real_to_sim_gravity_comp.py`。
+- 已删除示例/模块：`05_sim_to_real.py`、`08_real_to_sim_grasp_feedback.py`、
+  `src/rebot_b601_rs_sim/bridge/sim_to_real.py`、
+  `src/rebot_b601_rs_sim/bridge/grasp_feedback.py`。
+  这些功能实现复杂或当前无法稳定验证，已从工程中移除以保持精简。
+
+### 夹爪与 MuJoCo 映射
+
+- 真实夹爪电机读数范围：0°（闭合）~ 345°（张开）。
+- MuJoCo 夹爪直线位移范围：0 ~ 0.05 m。
+- 缩放系数：`0.05 / 6.021 ≈ 0.00830`。
+- `assets/00_arm_rs_asm_v3/00_arm_rs_asm_v3.xml` 中夹爪作动器已注释禁用：
+  real-to-sim 中夹爪由真实电机位置直接驱动，MuJoCo 不应再施加伺服力，
+  否则会产生虚假接触力。
+
 ### 提交前检查
 
 - 确保 `third_party/` 下没有新增被跟踪文件。
 - 确保 `assets/00_arm_rs_asm_v3/` 下的 XML 与当前主流程一致。
+- 删除示例或模块时，同步清理 `README.md`、bridge `__init__.py` 及对应测试。
