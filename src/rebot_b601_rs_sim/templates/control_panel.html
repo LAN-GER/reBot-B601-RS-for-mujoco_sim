@@ -480,9 +480,10 @@
     el.addEventListener("input", () => {
       updateVal(id);
       if (id === "x" || id === "y" || id === "z") _reachRender();
-      // 用户手动拖滑条:主动打断摇杆速度通道,避免两条指令同时驱动机械臂
-      if (joyState.active) {
+      // 用户手动拖滑条:主动打断任何速度通道 (摇杆 / Z 按钮),避免两条指令同时驱动机械臂
+      if (joyState.active || zBtnState.active) {
         joyState.active = false; joyState.vx = 0; joyState.vy = 0;
+        if (zBtnState.active) { zBtnState.active = false; zBtnState.dir = 0; }
         if (ws && ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({type: "velocity", vx: 0, vy: 0, vz: 0}));
         }
@@ -520,9 +521,13 @@
 
     // 摇杆已切换到独立的"速度通道",不再写 _acc,以免与拖条/键盘的精确通道混淆
 
-    // Z 按钮长按 → 累加 (与键盘/摇杆统一走 rAF 累加器)
+    // Z 按钮已切到独立的"速度通道",不再写 _acc,以保持方案 D 一致性
+    // 周期性 heartbeat:重发 vz,防止长按中 WS 漏消息丢失 vz 状态
     if (zBtnState.active) {
-      _acc.z += zBtnState.dir * RATE * dt;
+      _z_vel_tick = (_z_vel_tick + 1) % 6;   // ~10 Hz @ 60 fps
+      if (_z_vel_tick === 0) emitZVelocity();
+    } else {
+      _z_vel_tick = 0;
     }
 
     // 所有轴统一应用超步长的累加量
@@ -595,8 +600,8 @@
 
       const fraction = Math.min(dist / r, 1.0);
       joyState.active = true;
-      joyState.vx = -ndy * fraction;        // X↔Y 对调保留原始手感
-      joyState.vy = ndx * fraction;
+      joyState.vx = -ndy * fraction;        // X: 摇杆↑/↓ → 机械臂 +X/-X  (保持原手感)
+      joyState.vy = -ndx * fraction;       // Y: 摇杆→/← → 机械臂 -Y/+Y  (反向)
       posDisp.textContent = `vx=${(joyState.vx*JOY_VMAX).toFixed(3)} m/s  vy=${(joyState.vy*JOY_VMAX).toFixed(3)} m/s · 速度通道`;
       emitVelocity();                       // 直接推 WS,不再走 _acc
     }
@@ -610,41 +615,58 @@
     resetKnob();
   })();
 
-  // ── Z 按钮: 按下立即走一步, 长按定时器持续步进 ──
+  // ── Z 按钮: 走速度通道 (与摇杆共用 type=velocity 消息) ──
+  // 长按期间发 vz ≠ 0,松开发 vz = 0,后端 OSC 块直接积分 — 与方案 D 一致。
+  // 同时兼容键盘 E/D: KB_MAP 中 e/d 对应 z,那部分走 _acc 累加 + 滑条;若用户
+    // 已经按了 Z 按钮,滑条 input 监听器会顺手把 vz 也置 0 (见 SLIDERS.forEach)。
+  const VZ_MAX = 0.12;                  // m/s,Z 按钮推满对应线速度
+  let _z_vel_tick = 0;                  // heartbeat 计时器 (见 tick())
+
+  function emitZVelocity() {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    // 注意:同时发送当前 vx/vy 也置 0 + 把 joystick 的方向也置 0,
+    //        这样 Z 按钮按下时与摇杆不会在 OSC 处叠加
+    ws.send(JSON.stringify({
+      type: "velocity",
+      vx: 0,
+      vy: 0,
+      vz: zBtnState.active ? zBtnState.dir * VZ_MAX : 0.0,
+    }));
+  }
+
   (function initZButtons() {
     const zUp = document.getElementById("z-up");
     const zDown = document.getElementById("z-down");
 
-    // 按下立即走一步 + 启动连续累加
     zUp.addEventListener("mousedown", e => {
       e.preventDefault();
-      const el = document.getElementById("z");
-      const step = 0.005;
-      let v = parseFloat(el.value) + step;
-      v = Math.min(parseFloat(el.max), Math.max(parseFloat(el.min), v));
-      el.value = v;
-      updateVal("z");
-      sendTarget(true);
       zBtnState.active = true;
       zBtnState.dir = 1;
+      emitZVelocity();                    // 立即推 vz = +VZ_MAX
     });
     zDown.addEventListener("mousedown", e => {
       e.preventDefault();
-      const el = document.getElementById("z");
-      const step = 0.005;
-      let v = parseFloat(el.value) - step;
-      v = Math.min(parseFloat(el.max), Math.max(parseFloat(el.min), v));
-      el.value = v;
-      updateVal("z");
-      sendTarget(true);
       zBtnState.active = true;
       zBtnState.dir = -1;
+      emitZVelocity();                    // 立即推 vz = -VZ_MAX
     });
 
-    // 松开时停止累加 (window 级, 防止鼠标移出按钮时丢事件)
+    // 松开时停止 (window 级, 防止鼠标移出按钮时丢事件)
     window.addEventListener("mouseup", () => {
-      zBtnState.active = false;
+      if (zBtnState.active) {
+        zBtnState.active = false;
+        emitZVelocity();                  // 推 vz = 0
+      }
     });
+
+    // touch 端 (移动端):同样处理
+    zUp.addEventListener("touchstart", e => { e.preventDefault(); zBtnState.active = true; zBtnState.dir = 1; emitZVelocity(); });
+    zDown.addEventListener("touchstart", e => { e.preventDefault(); zBtnState.active = true; zBtnState.dir = -1; emitZVelocity(); });
+    const _zRelease = () => { if (zBtnState.active) { zBtnState.active = false; emitZVelocity(); } };
+    zUp.addEventListener("touchend", _zRelease);
+    zDown.addEventListener("touchend", _zRelease);
+    zUp.addEventListener("touchcancel", _zRelease);
+    zDown.addEventListener("touchcancel", _zRelease);
   })();
 
   // ── 键盘: 按下/松开设置状态, rAF 累加器驱动 ──
