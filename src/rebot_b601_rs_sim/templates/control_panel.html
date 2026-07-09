@@ -75,6 +75,29 @@
     width: 18px; height: 18px; border-radius: 50%;
     background: var(--accent); cursor: pointer; border: none;
   }
+  /* 可达性预校验配色 */
+  input[type="range"].fail::-webkit-slider-thumb {
+    background: var(--red);
+    box-shadow: 0 0 8px 1px rgba(224,85,85,0.5);
+  }
+  input[type="range"].warn::-webkit-slider-thumb {
+    background: var(--warn);
+    box-shadow: 0 0 8px 1px rgba(240,160,48,0.45);
+  }
+  input[type="range"].ok::-webkit-slider-thumb { background: var(--accent); }
+  .reach-status {
+    font-family: "JetBrains Mono","Consolas",monospace;
+    font-size: 0.72rem; color: #8a8f98;
+    margin: -2px 0 10px; padding: 6px 10px;
+    background: #1a1d23; border-radius: 4px;
+    display: flex; justify-content: space-between; align-items: center;
+    border-left: 3px solid var(--accent);
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .reach-status.warn { border-left-color: var(--warn); color: var(--warn); }
+  .reach-status.fail { border-left-color: var(--red);   color: var(--red); }
+  .reach-status .reach-msg { font-weight: 500; }
+  .reach-status .reach-r   { opacity: 0.75; }
   .section-label {
     font-size: 0.75rem; font-weight: 600; text-transform: uppercase;
     letter-spacing: 0.06em; color: #636873;
@@ -260,6 +283,11 @@
     <input type="range" id="z" min="-0.05" max="0.55" step="0.001" value="0.200">
   </div>
 
+  <div class="reach-status ok" id="reach-status" title="基于 Pinocchio FK 算得的几何常量">
+    <span class="reach-msg" id="reach-msg">可达性 · 已加载</span>
+    <span class="reach-r" id="reach-r">r=-</span>
+  </div>
+
   <div class="section-label">姿态 (rad)</div>
   <div class="slider-group">
     <div class="label-row"><label>Roll <span class="kbd">R</span><span class="kbd">F</span></label><span class="val" id="val-roll">0.00</span></div>
@@ -395,12 +423,63 @@
     document.getElementById("val-" + id).textContent = v.toFixed(prec);
   }
 
-  // 滑块鼠标拖动 → 发送绝对目标
+  // ── 可达性预校验 (基于 Pinocchio FK 算出的 B601-RS 几何常数) ──
+  // 默认值与 backend/src/rebot_b601_rs_sim/templates/workspace_constants.json 一致;
+  // 若 templates 目录下能找到同名 JSON,会立刻用真值替换。
+  const WK = {
+    shoulder_xyz:     [0.020, 0.0263, 0.145],
+    L_max_m:          0.55,
+    L_min_m:          0.07,
+    warn_ratio:       0.85,
+    dz_floor_m:       -0.10,
+    joint_limits_rad: [],
+    _loaded:          false,
+  };
+  fetch("workspace_constants.json")
+    .then(r => r.ok ? r.json() : null)
+    .then(j => { if (j) { Object.assign(WK, j, {_loaded: true}); _reachRender(); } })
+    .catch(() => { /* JSON 缺失时使用兜底默认值 */ });
+
+  function classifyPrecheck(vals) {
+    const [sx, sy, sz] = WK.shoulder_xyz;
+    const dx = +vals.x - sx, dy = +vals.y - sy, dz = +vals.z - sz;
+    const r  = Math.sqrt(dx*dx + dy*dy + dz*dz);
+    if (dz < WK.dz_floor_m)              return { tier:"fail", r, msg:`z 低于肩部死区` };
+    if (r > WK.L_max_m)                  return { tier:"fail", r, msg:`r=${r.toFixed(3)} > L_max=${WK.L_max_m}` };
+    if (r < WK.L_min_m)                  return { tier:"fail", r, msg:`r=${r.toFixed(3)} < L_min=${WK.L_min_m}` };
+    if (r > WK.warn_ratio * WK.L_max_m)  return { tier:"warn", r, msg:`r=${r.toFixed(3)} 接近边界` };
+    return { tier:"ok", r, msg:"可达" };
+  }
+
+  function paintSliders(tier) {
+    for (const id of ["x","y","z"]) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      el.classList.remove("ok","warn","fail");
+      el.classList.add(tier);
+    }
+  }
+
+  function _reachRender() {
+    const v = Object.fromEntries(SLIDERS.map(i => [i, document.getElementById(i).value]));
+    const c = classifyPrecheck(v);
+    paintSliders(c.tier);
+    const box = document.getElementById("reach-status");
+    const tag = document.getElementById("reach-msg");
+    const rt  = document.getElementById("reach-r");
+    if (box) box.classList.remove("ok","warn","fail"), box.classList.add(c.tier);
+    if (tag) tag.textContent = WK._loaded ? `可达性 · ${c.msg}` : `可达性 · 兜底默认 · ${c.msg}`;
+    if (rt)  rt.textContent  = `r=${c.r.toFixed(3)} · Lmax=${WK.L_max_m}`;
+  }
+
+  // 滑块鼠标拖动 → 发送绝对目标 + 前端可达性预校验
   let _serverSync = false;
+  _reachRender();
   SLIDERS.forEach(id => {
     const el = document.getElementById(id);
     el.addEventListener("input", () => {
       updateVal(id);
+      if (id === "x" || id === "y" || id === "z") _reachRender();
       if (!_serverSync && document.getElementById("auto-send").checked) sendTarget();
     });
   });

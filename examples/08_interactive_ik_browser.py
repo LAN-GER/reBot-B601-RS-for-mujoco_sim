@@ -62,6 +62,19 @@ SLIDER_RANGES = {
 # WebSocket 服务（在后台线程中运行）
 # ---------------------------------------------------------------------------
 # -- tornado handlers (module-level) -----------------------------------------
+
+class _ConstantsHandler(tornado.web.RequestHandler):
+    """Serve workspace_constants.json (Pinocchio-derived geometry bounds)."""
+    def get(self) -> None:
+        path = _TEMPLATE_PATH.parent / "workspace_constants.json"
+        if not path.exists():
+            self.set_status(404)
+            self.write("{}")
+            return
+        self.set_header("Content-Type", "application/json; charset=utf-8")
+        self.set_header("Cache-Control", "no-store")
+        self.write(path.read_text(encoding="utf-8"))
+
 class _IndexHandler(tornado.web.RequestHandler):
     def get(self) -> None:
         self.set_header("Content-Type", "text/html; charset=utf-8")
@@ -133,7 +146,8 @@ class WebSocketServer:
         self._ioloop.make_current()
 
         app = tornado.web.Application(
-            [(r"/", _IndexHandler), (r"/ws", _WsHandler)],
+            [(r"/", _IndexHandler), (r"/ws", _WsHandler),
+                (r"/workspace_constants.json", _ConstantsHandler)],
             cmd_queue=self.cmd_queue,
             server=self,
         )
