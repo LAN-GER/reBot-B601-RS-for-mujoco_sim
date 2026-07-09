@@ -416,6 +416,7 @@
   let _rafUpdating = false;
   const joyState = { active: false, vx: 0, vy: 0 };
   const keyState = {};
+  const zBtnState = { active: false, dir: 0 };
 
   // ── 动画驱动循环 (累加器模式) ──
   const _acc = { x:0, y:0, z:0, roll:0, pitch:0, yaw:0 };
@@ -435,6 +436,11 @@
     if (joyState.active) {
       _acc.x += joyState.vx * JOY_RATE * dt;
       _acc.y += joyState.vy * JOY_RATE * dt;
+    }
+
+    // Z 按钮长按 → 累加 (与键盘/摇杆统一走 rAF 累加器)
+    if (zBtnState.active) {
+      _acc.z += zBtnState.dir * RATE * dt;
     }
 
     // 所有轴统一应用超步长的累加量
@@ -509,27 +515,39 @@
 
   // ── Z 按钮: 按下立即走一步, 长按定时器持续步进 ──
   (function initZButtons() {
-    let zTimer = null;
-    function zStep(dir) {
+    const zUp = document.getElementById("z-up");
+    const zDown = document.getElementById("z-down");
+
+    // 按下立即走一步 + 启动连续累加
+    zUp.addEventListener("mousedown", e => {
+      e.preventDefault();
       const el = document.getElementById("z");
-      const step = 0.005;  // 0.1/s @ 50ms interval
-      let v = parseFloat(el.value) + dir * step;
+      const step = 0.005;
+      let v = parseFloat(el.value) + step;
       v = Math.min(parseFloat(el.max), Math.max(parseFloat(el.min), v));
-      if (v !== parseFloat(el.value)) { el.value = v; updateVal("z"); sendTarget(); }
-    }
-    function startZ(dir) {
-      zStep(dir);
-      zTimer = setInterval(() => zStep(dir), 50);
-    }
-    function stopZ() {
-      if (zTimer) { clearInterval(zTimer); zTimer = null; }
-    }
-    document.getElementById("z-up").addEventListener("mousedown", e => { e.preventDefault(); startZ(1); });
-    document.getElementById("z-up").addEventListener("mouseup", stopZ);
-    document.getElementById("z-up").addEventListener("mouseleave", stopZ);
-    document.getElementById("z-down").addEventListener("mousedown", e => { e.preventDefault(); startZ(-1); });
-    document.getElementById("z-down").addEventListener("mouseup", stopZ);
-    document.getElementById("z-down").addEventListener("mouseleave", stopZ);
+      el.value = v;
+      updateVal("z");
+      sendTarget(true);
+      zBtnState.active = true;
+      zBtnState.dir = 1;
+    });
+    zDown.addEventListener("mousedown", e => {
+      e.preventDefault();
+      const el = document.getElementById("z");
+      const step = 0.005;
+      let v = parseFloat(el.value) - step;
+      v = Math.min(parseFloat(el.max), Math.max(parseFloat(el.min), v));
+      el.value = v;
+      updateVal("z");
+      sendTarget(true);
+      zBtnState.active = true;
+      zBtnState.dir = -1;
+    });
+
+    // 松开时停止累加 (window 级, 防止鼠标移出按钮时丢事件)
+    window.addEventListener("mouseup", () => {
+      zBtnState.active = false;
+    });
   })();
 
   // ── 键盘: 按下/松开设置状态, rAF 累加器驱动 ──

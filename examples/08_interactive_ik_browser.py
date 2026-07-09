@@ -39,7 +39,7 @@ LINEAR_SPEED = 0.15          # m/s，用于估算轨迹时长
 HTTP_PORT = 8766
 
 # HTML 模板路径
-_TEMPLATE_PATH = Path(__file__).resolve().parent / "templates" / "control_panel.html"
+_TEMPLATE_PATH = Path(__file__).resolve().parents[1] / "src" / "rebot_b601_rs_sim" / "templates" / "control_panel.html"
 
 def _load_html() -> str:
     if _TEMPLATE_PATH.exists():
