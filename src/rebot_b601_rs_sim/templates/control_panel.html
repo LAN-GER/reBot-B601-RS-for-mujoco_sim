@@ -480,6 +480,13 @@
     el.addEventListener("input", () => {
       updateVal(id);
       if (id === "x" || id === "y" || id === "z") _reachRender();
+      // 用户手动拖滑条:主动打断摇杆速度通道,避免两条指令同时驱动机械臂
+      if (joyState.active) {
+        joyState.active = false; joyState.vx = 0; joyState.vy = 0;
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({type: "velocity", vx: 0, vy: 0, vz: 0}));
+        }
+      }
       if (!_serverSync && document.getElementById("auto-send").checked) sendTarget();
     });
   });
@@ -511,11 +518,7 @@
     }
 
 
-    // 摇杆 → 累加
-    if (joyState.active) {
-      _acc.x += joyState.vx * JOY_RATE * dt;
-      _acc.y += joyState.vy * JOY_RATE * dt;
-    }
+    // 摇杆已切换到独立的"速度通道",不再写 _acc,以免与拖条/键盘的精确通道混淆
 
     // Z 按钮长按 → 累加 (与键盘/摇杆统一走 rAF 累加器)
     if (zBtnState.active) {
@@ -551,10 +554,24 @@
     const posDisp = document.getElementById("joystick-pos");
     let dragging = false;
 
+    // 推到 100% 对应的笛卡尔线速度 (m/s),与后端 JOY_LINEAR_SPEED 对齐
+    const JOY_VMAX = 0.20;
+
+    function emitVelocity() {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      ws.send(JSON.stringify({
+        type: "velocity",
+        vx: joyState.vx * JOY_VMAX,
+        vy: joyState.vy * JOY_VMAX,
+        vz: 0,
+      }));
+    }
+
     function resetKnob() {
       knob.style.left = "50%"; knob.style.top = "50%";
       joyState.active = false; joyState.vx = 0; joyState.vy = 0;
-      posDisp.textContent = "X=- Y=-";
+      posDisp.textContent = "vx=0.000 m/s  vy=0.000 m/s · 速度通道";
+      emitVelocity();                       // 推送 vx=vy=0,后端立即停积分
     }
 
     function handleEvent(clientX, clientY) {
@@ -578,9 +595,10 @@
 
       const fraction = Math.min(dist / r, 1.0);
       joyState.active = true;
-      joyState.vx = -ndy * fraction;
+      joyState.vx = -ndy * fraction;        // X↔Y 对调保留原始手感
       joyState.vy = ndx * fraction;
-      posDisp.textContent = `X:${(joyState.vx*JOY_RATE).toFixed(4)}/s Y:${(joyState.vy*JOY_RATE).toFixed(4)}/s`;
+      posDisp.textContent = `vx=${(joyState.vx*JOY_VMAX).toFixed(3)} m/s  vy=${(joyState.vy*JOY_VMAX).toFixed(3)} m/s · 速度通道`;
+      emitVelocity();                       // 直接推 WS,不再走 _acc
     }
 
     pad.addEventListener("mousedown", e => { dragging = true; pad.classList.add("active"); handleEvent(e.clientX, e.clientY); });

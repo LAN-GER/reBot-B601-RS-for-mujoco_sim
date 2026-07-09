@@ -37,6 +37,8 @@ from rebot_b601_rs_sim.control.ik import IKSolver
 N_ARM_JOINTS = 6
 LINEAR_SPEED = 0.15          # m/s，用于估算轨迹时长
 HTTP_PORT = 8766
+JOY_LINEAR_SPEED = 0.20    # m/s，摇杆推到 100% 对应的最大笛卡尔线速度 (方案 D 速度通道)
+VEL_TIKHONOV   = 1e-6       # 阻尼最小二乘 λ,避免雅可比奇异处关节速度爆掉
 
 # HTML 模板路径
 _TEMPLATE_PATH = Path(__file__).resolve().parents[1] / "src" / "rebot_b601_rs_sim" / "templates" / "control_panel.html"
@@ -230,6 +232,14 @@ def main() -> None:
     trajectory_lock = threading.Lock()
     stop_event = threading.Event()
 
+    # ── 速度通道 (方案 D:摇杆不经过 IK / 不进 start_trajectory) ──────────
+    _running_velocity = np.zeros(3)               # (vx, vy, vz) in world frame
+    _velocity_lock = threading.Lock()
+    _vel_pin_data = ik.model.createData()         # 复用一次,避免与 ik.data 互踩
+    _vel_frame_id = ik.frame_id
+    _vel_pose_tick = 0                            # 速度模式下周期回传当前位姿
+
+
     def _signal_handler(_sig, _frame) -> None:
         stop_event.set()
     signal.signal(signal.SIGINT, _signal_handler)
@@ -333,18 +343,84 @@ def main() -> None:
                     send_feedback(True, "目标已接受")
                     send_pose(target_pos, np.array([roll, pitch, yaw]))
 
-            # 推进轨迹
-            with trajectory_lock:
-                if trajectory is not None:
-                    q_start, q_end, t_start, duration = trajectory
-                    elapsed = time.time() - t_start
-                    if elapsed >= duration:
-                        q_current[:N_ARM_JOINTS] = q_end
-                        trajectory = None
-                    else:
-                        q_current[:N_ARM_JOINTS] = min_jerk_interpolation(
-                            q_start, q_end, elapsed / duration,
+                elif msg_type == "velocity":
+                    # 摇杆速度通道:浏览器 emitVelocity 发的字段在顶层 (与 target/vx 区分,
+                    # 因为 vx/vy/vz 本身就是值,无需再套一层 values)。
+                    with _velocity_lock:
+                        _running_velocity[:] = (
+                            float(msg.get("vx", 0.0)),
+                            float(msg.get("vy", 0.0)),
+                            float(msg.get("vz", 0.0)),
                         )
+                    _log(ws_server, f"  ⌖ velocity=({_running_velocity[0]:+.3f}, {_running_velocity[1]:+.3f}, {_running_velocity[2]:+.3f}) m/s", "vel")
+
+                # 注:摇杆速度通道不调用 start_trajectory,由主循环 OSC 块直接积分 q_current
+
+            # ── 速度通道 vs 轨迹:互斥,速度通道优先生效 ──────────────────
+            with _velocity_lock:
+                _vel_active = bool(np.any(np.abs(_running_velocity) > 1e-6))
+                _vel_cmd   = _running_velocity.copy() if _vel_active else np.zeros(3)
+
+            if _vel_active:
+                # 方案 D:Operational Space 速度控制,绕开 IK 与 trajectory
+                # 关键:pinocchio 的 model.nq = 8 (机器人 6+夹爪 2),但 mj_data.qpos 在场景里还会追加
+                # cube 的 freejoint (3 位移 + 4 四元数) → 总长 15。所以绝不能直接把 mj_data.qpos 喂给 pinocchio。
+                # 解决:按 SDK solve_ik 的相同规约,把机器人 6 维 slice 出来再 pad 到 model.nq=8 (末位夹爪填 0)。
+                _PIN_NQ = ik.model.nq                                 # = 8
+                _PIN_NV = ik.model.nv                                 # = 8
+                q_pin   = np.zeros(_PIN_NQ)                           # 机器人 pinocchio 形态 (夹爪 0)
+                q_pin[:N_ARM_JOINTS] = mj_data.qpos[:N_ARM_JOINTS]    # 只填前 6 个受控关节
+
+                pin.framesForwardKinematics(ik.model, _vel_pin_data, q_pin)
+                pin.computeJointJacobians(ik.model, _vel_pin_data, q_pin)
+                # 只取受控关节 (6×6 子矩阵),与 SDK 的 controlled_joints = NUM_JOINTS 一致
+                J = pin.getFrameJacobian(ik.model, _vel_pin_data, _vel_frame_id, pin.LOCAL)[:, :N_ARM_JOINTS]
+
+                v6 = np.zeros(6)
+                v6[:3] = _vel_cmd
+                JJT = J @ J.T
+                JJT[np.arange(6), np.arange(6)] += VEL_TIKHONOV
+                dq_arm = J.T @ np.linalg.solve(JJT, v6) * dt          # (N_ARM_JOINTS,)
+                # 同样 pad 到 model.nv,让 pin.integrate 不会因尺寸报错
+                dq_pin = np.zeros(_PIN_NV)
+                dq_pin[:N_ARM_JOINTS] = dq_arm
+                q_new_pin = np.asarray(pin.integrate(ik.model, q_pin, dq_pin)).flatten()
+
+                # 关节极限钳位 (仅作用于受控关节,夹爪自由):撞墙即停
+                hit_limit = False
+                for i in range(N_ARM_JOINTS):
+                    lo = float(ik.model.lowerPositionLimit[i])
+                    hi = float(ik.model.upperPositionLimit[i])
+                    if np.isfinite(lo) and q_new_pin[i] < lo:
+                        q_new_pin[i] = lo; hit_limit = True
+                    elif np.isfinite(hi) and q_new_pin[i] > hi:
+                        q_new_pin[i] = hi; hit_limit = True
+                if hit_limit:
+                    with _velocity_lock:
+                        _running_velocity[:] = 0.0
+                # 只写回前 6 维到 q_current,保留 mj_data 中夹爪 / cube / 等的自由度
+                q_current[:N_ARM_JOINTS] = q_new_pin[:N_ARM_JOINTS]
+
+                # 速度模式下周期性回传当前末端位姿,同步浏览器侧滑条
+                _vel_pose_tick = (_vel_pose_tick + 1) % 10
+                if _vel_pose_tick == 0:
+                    pin.framesForwardKinematics(ik.model, _vel_pin_data, q_pin)
+                    cur_pos = _vel_pin_data.oMf[_vel_frame_id].translation.copy()
+                    cur_rot = _vel_pin_data.oMf[_vel_frame_id].rotation.copy()
+                    send_pose(cur_pos, pin.rpy.matrixToRpy(cur_rot))
+            else:
+                # 原 trajectory 推进 (位置通道)
+                with trajectory_lock:
+                    if trajectory is not None:
+                        q_start, q_end, t_start, duration = trajectory
+                        elapsed = time.time() - t_start
+                        if elapsed >= duration:
+                            q_current[:N_ARM_JOINTS] = q_end
+                            trajectory = None
+                        else:
+                            q_current[:N_ARM_JOINTS] = min_jerk_interpolation(
+                                q_start, q_end, elapsed / duration,
+                            )
 
             mj_data.qpos[:] = q_current
             mujoco.mj_forward(mj_model, mj_data)
