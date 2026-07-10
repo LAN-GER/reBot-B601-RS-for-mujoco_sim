@@ -30,6 +30,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from rebot_b601_rs_sim.config import SCENE_PATH
 from rebot_b601_rs_sim.control.ik import IKSolver
+from rebot_b601_rs_sim.control.qp_velocity_solver import QPVelocitySolver
+
+USE_QP_VELOCITY = True          # 摇杆/速度通道是否使用 QP 求解器
+USE_COLLISION_CONSTRAINTS = True  # 速度通道是否启用自碰撞/环境碰撞约束
 
 # ---------------------------------------------------------------------------
 # 常量
@@ -37,7 +41,7 @@ from rebot_b601_rs_sim.control.ik import IKSolver
 N_ARM_JOINTS = 6
 LINEAR_SPEED = 0.15          # m/s，用于估算轨迹时长
 HTTP_PORT = 8766
-JOY_LINEAR_SPEED = 0.20    # m/s，摇杆推到 100% 对应的最大笛卡尔线速度 (方案 D 速度通道)
+JOY_LINEAR_SPEED = 1.00    # m/s，摇杆推到 100% 对应的最大笛卡尔线速度 (方案 D 速度通道)
 VEL_TIKHONOV   = 1e-6       # 阻尼最小二乘 λ,避免雅可比奇异处关节速度爆掉
 
 # HTML 模板路径
@@ -213,6 +217,19 @@ def main() -> None:
         dt = 0.002
         mj_model.opt.timestep = dt
 
+    qp_solver: QPVelocitySolver | None = None
+    if USE_QP_VELOCITY:
+        qp_solver = QPVelocitySolver(
+            ik=ik,
+            mj_model=mj_model,
+            dt=dt,
+            lambda_reg=VEL_TIKHONOV,
+            dq_max=15.0,                # rad/s，摇杆通道最大关节速度
+            position_margin=0.005,
+            collision_safety_distance=0.001,
+            include_obstacles=True,
+        )
+
     q_current = np.zeros(nq_total)
     mj_data.qpos[:] = q_current
     mujoco.mj_forward(mj_model, mj_data)
@@ -234,11 +251,17 @@ def main() -> None:
 
     # ── 速度通道 (方案 D:摇杆不经过 IK / 不进 start_trajectory) ──────────
     _running_velocity = np.zeros(3)               # (vx, vy, vz) in world frame
+    _speed_scale = 1.0                            # 速度通道倍率，由网页滑条控制
     _velocity_lock = threading.Lock()
     _vel_pin_data = ik.model.createData()         # 复用一次,避免与 ik.data 互踩
     _vel_frame_id = ik.frame_id
     _vel_pose_tick = 0                            # 速度模式下周期回传当前位姿
 
+    # ── 速度通道积分后位置可达性检查：若新位置无 IK 解，则回退并停止 ─────
+
+    # ── 速度通道关节速度低通滤波：抑制 QP/DLS 解在步间的小幅跳变 ─────────────
+    DQ_FILTER_ALPHA = 0.5                         # 越大越跟手，越小越平滑
+    _dq_filtered = np.zeros(N_ARM_JOINTS)
 
     def _signal_handler(_sig, _frame) -> None:
         stop_event.set()
@@ -276,6 +299,8 @@ def main() -> None:
     # ── 主仿真循环 ────────────────────────────────────────────────────────
     with mujoco.viewer.launch_passive(mj_model, mj_data) as viewer:
         while viewer.is_running() and not stop_event.is_set():
+            loop_start = time.perf_counter()          # 用于稳定主循环周期
+
             # 排空队列，只保留最后一条目标消息
             msg = None
             while True:
@@ -352,7 +377,12 @@ def main() -> None:
                             float(msg.get("vy", 0.0)),
                             float(msg.get("vz", 0.0)),
                         )
-                    _log(ws_server, f"  ⌖ velocity=({_running_velocity[0]:+.3f}, {_running_velocity[1]:+.3f}, {_running_velocity[2]:+.3f}) m/s", "vel")
+                    # 速度消息频率很高，不再逐条打印，避免日志/锁竞争导致卡顿
+
+                elif msg_type == "speed_scale":
+                    with _velocity_lock:
+                        _speed_scale = float(msg.get("scale", 1.0))
+                    _log(ws_server, f"  速度倍率改为 {_speed_scale:.2f}x", "ok")
 
                 # 注:摇杆速度通道不调用 start_trajectory,由主循环 OSC 块直接积分 q_current
 
@@ -360,46 +390,81 @@ def main() -> None:
             with _velocity_lock:
                 _vel_active = bool(np.any(np.abs(_running_velocity) > 1e-6))
                 _vel_cmd   = _running_velocity.copy() if _vel_active else np.zeros(3)
+                _vel_cmd  *= _speed_scale
 
             if _vel_active:
-                # 方案 D:Operational Space 速度控制,绕开 IK 与 trajectory
+                # 方案 D/E: Operational Space 速度控制,绕开 IK 与 trajectory
                 # 关键:pinocchio 的 model.nq = 8 (机器人 6+夹爪 2),但 mj_data.qpos 在场景里还会追加
                 # cube 的 freejoint (3 位移 + 4 四元数) → 总长 15。所以绝不能直接把 mj_data.qpos 喂给 pinocchio。
                 # 解决:按 SDK solve_ik 的相同规约,把机器人 6 维 slice 出来再 pad 到 model.nq=8 (末位夹爪填 0)。
                 _PIN_NQ = ik.model.nq                                 # = 8
                 _PIN_NV = ik.model.nv                                 # = 8
                 q_pin   = np.zeros(_PIN_NQ)                           # 机器人 pinocchio 形态 (夹爪 0)
-                q_pin[:N_ARM_JOINTS] = mj_data.qpos[:N_ARM_JOINTS]    # 只填前 6 个受控关节
+                q_pin[:N_ARM_JOINTS] = q_current[:N_ARM_JOINTS]       # 只填前 6 个受控关节
+                q_arm_prev = q_current[:N_ARM_JOINTS].copy()          # 用于积分后回退
 
-                pin.framesForwardKinematics(ik.model, _vel_pin_data, q_pin)
-                pin.computeJointJacobians(ik.model, _vel_pin_data, q_pin)
-                # 只取受控关节 (6×6 子矩阵),与 SDK 的 controlled_joints = NUM_JOINTS 一致
-                J = pin.getFrameJacobian(ik.model, _vel_pin_data, _vel_frame_id, pin.LOCAL)[:, :N_ARM_JOINTS]
+                if USE_QP_VELOCITY and qp_solver is not None:
+                    # QP 通道：把关节速度/位置/碰撞约束一次性写进二次规划
+                    v6 = np.zeros(6)
+                    v6[:3] = _vel_cmd
+                    dq_arm, qp_ok, qp_msg = qp_solver.solve(
+                        q_current[:N_ARM_JOINTS].copy(), v6,
+                        qpos_full=q_current if USE_COLLISION_CONSTRAINTS else None,
+                        initvals=_dq_filtered.copy(),
+                    )
+                    if not qp_ok:
+                        _log(ws_server, f"  ⚠ {qp_msg}", "warn")
+                    # 低通滤波：抑制 QP/DLS 解在步间的跳变
+                    dq_arm = DQ_FILTER_ALPHA * _dq_filtered + (1.0 - DQ_FILTER_ALPHA) * dq_arm
+                    _dq_filtered[:] = dq_arm
+                    dq_pin = np.zeros(_PIN_NV)
+                    dq_pin[:N_ARM_JOINTS] = dq_arm
+                    q_new_pin = np.asarray(pin.integrate(ik.model, q_pin, dq_pin * dt)).flatten()
+                else:
+                    # 原 DLS 通道（无碰撞约束，仅位置硬钳位）
+                    pin.framesForwardKinematics(ik.model, _vel_pin_data, q_pin)
+                    pin.computeJointJacobians(ik.model, _vel_pin_data, q_pin)
+                    J = pin.getFrameJacobian(ik.model, _vel_pin_data, _vel_frame_id, pin.WORLD)[:, :N_ARM_JOINTS]
 
-                v6 = np.zeros(6)
-                v6[:3] = _vel_cmd
-                JJT = J @ J.T
-                JJT[np.arange(6), np.arange(6)] += VEL_TIKHONOV
-                dq_arm = J.T @ np.linalg.solve(JJT, v6) * dt          # (N_ARM_JOINTS,)
-                # 同样 pad 到 model.nv,让 pin.integrate 不会因尺寸报错
-                dq_pin = np.zeros(_PIN_NV)
-                dq_pin[:N_ARM_JOINTS] = dq_arm
-                q_new_pin = np.asarray(pin.integrate(ik.model, q_pin, dq_pin)).flatten()
+                    v6 = np.zeros(6)
+                    v6[:3] = _vel_cmd
+                    JJT = J @ J.T
+                    JJT[np.arange(6), np.arange(6)] += VEL_TIKHONOV
+                    dq_arm = J.T @ np.linalg.solve(JJT, v6) * dt
+                    # 低通滤波：抑制 DLS 解在步间的跳变
+                    dq_arm = DQ_FILTER_ALPHA * _dq_filtered + (1.0 - DQ_FILTER_ALPHA) * dq_arm
+                    _dq_filtered[:] = dq_arm
+                    dq_pin = np.zeros(_PIN_NV)
+                    dq_pin[:N_ARM_JOINTS] = dq_arm
+                    q_new_pin = np.asarray(pin.integrate(ik.model, q_pin, dq_pin)).flatten()
 
-                # 关节极限钳位 (仅作用于受控关节,夹爪自由):撞墙即停
-                hit_limit = False
-                for i in range(N_ARM_JOINTS):
-                    lo = float(ik.model.lowerPositionLimit[i])
-                    hi = float(ik.model.upperPositionLimit[i])
-                    if np.isfinite(lo) and q_new_pin[i] < lo:
-                        q_new_pin[i] = lo; hit_limit = True
-                    elif np.isfinite(hi) and q_new_pin[i] > hi:
-                        q_new_pin[i] = hi; hit_limit = True
-                if hit_limit:
-                    with _velocity_lock:
-                        _running_velocity[:] = 0.0
+                    # 关节极限钳位 (仅作用于受控关节,夹爪自由):撞墙即停
+                    hit_limit = False
+                    for i in range(N_ARM_JOINTS):
+                        lo = float(ik.model.lowerPositionLimit[i])
+                        hi = float(ik.model.upperPositionLimit[i])
+                        if np.isfinite(lo) and q_new_pin[i] < lo:
+                            q_new_pin[i] = lo; hit_limit = True
+                        elif np.isfinite(hi) and q_new_pin[i] > hi:
+                            q_new_pin[i] = hi; hit_limit = True
+                    if hit_limit:
+                        with _velocity_lock:
+                            _running_velocity[:] = 0.0
+
                 # 只写回前 6 维到 q_current,保留 mj_data 中夹爪 / cube / 等的自由度
                 q_current[:N_ARM_JOINTS] = q_new_pin[:N_ARM_JOINTS]
+
+                # 积分后位置可达性检查：若新位置不存在位置 IK 解，则回退并停止
+                new_pos, _ = ik.forward_kinematics(q_current[:N_ARM_JOINTS])
+                _, pos_ok = ik.solve(
+                    new_pos, target_rot=None, q_init=q_arm_prev,
+                    max_iter=200, tolerance=1e-3,
+                )
+                if not pos_ok:
+                    q_current[:N_ARM_JOINTS] = q_arm_prev
+                    with _velocity_lock:
+                        _running_velocity[:] = 0.0
+                    _log(ws_server, "  △ 目标位置超出工作空间，已停止移动", "warn")
 
                 # 速度模式下周期性回传当前末端位姿,同步浏览器侧滑条
                 _vel_pose_tick = (_vel_pose_tick + 1) % 10
@@ -410,6 +475,7 @@ def main() -> None:
                     send_pose(cur_pos, pin.rpy.matrixToRpy(cur_rot))
             else:
                 # 原 trajectory 推进 (位置通道)
+                _dq_filtered[:] = 0.0                     # 退出速度模式后清空滤波器
                 with trajectory_lock:
                     if trajectory is not None:
                         q_start, q_end, t_start, duration = trajectory
@@ -425,7 +491,9 @@ def main() -> None:
             mj_data.qpos[:] = q_current
             mujoco.mj_forward(mj_model, mj_data)
             viewer.sync()
-            time.sleep(max(0.0, dt - 0.001))
+            # 稳定周期，避免有时 dt  sleep  0.001  造成不规则停顿
+            elapsed = time.perf_counter() - loop_start
+            time.sleep(max(0.0, dt - elapsed))
 
     ws_server.stop()
     _log(ws_server, "\n退出仿真。")

@@ -270,6 +270,12 @@
     </div>
   </div>
 
+  <div class="section-label">速度倍率</div>
+  <div class="slider-group">
+    <div class="label-row"><label>Scale</label><span class="val" id="val-speed-scale">1.00 x</span></div>
+    <input type="range" id="speed-scale" min="0.1" max="5.0" step="0.1" value="1.0">
+  </div>
+
   <div class="slider-group">
     <div class="label-row"><label>X <span class="kbd">Q</span><span class="kbd">A</span></label><span class="val" id="val-x">0.300</span></div>
     <input type="range" id="x" min="-0.20" max="0.60" step="0.001" value="0.300">
@@ -495,6 +501,15 @@
   document.getElementById("btn-send").addEventListener("click", () => sendTarget(true));
   document.getElementById("btn-home").addEventListener("click", sendHome);
 
+  // ── 速度倍率滑条 ──
+  document.getElementById("speed-scale").addEventListener("input", function () {
+    const scale = parseFloat(this.value);
+    document.getElementById("val-speed-scale").textContent = scale.toFixed(2) + " x";
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "speed_scale", scale: scale }));
+    }
+  });
+
   // ── 统一增量速率 (units/s) ──
   const RATE = 0.01;
   const JOY_RATE = 0.02;
@@ -560,7 +575,7 @@
     let dragging = false;
 
     // 推到 100% 对应的笛卡尔线速度 (m/s),与后端 JOY_LINEAR_SPEED 对齐
-    const JOY_VMAX = 0.20;
+    const JOY_VMAX = 1.00;
 
     function emitVelocity() {
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
@@ -619,7 +634,7 @@
   // 长按期间发 vz ≠ 0,松开发 vz = 0,后端 OSC 块直接积分 — 与方案 D 一致。
   // 同时兼容键盘 E/D: KB_MAP 中 e/d 对应 z,那部分走 _acc 累加 + 滑条;若用户
     // 已经按了 Z 按钮,滑条 input 监听器会顺手把 vz 也置 0 (见 SLIDERS.forEach)。
-  const VZ_MAX = 0.12;                  // m/s,Z 按钮推满对应线速度
+  const VZ_MAX = 0.50;                  // m/s,Z 按钮推满对应线速度
   let _z_vel_tick = 0;                  // heartbeat 计时器 (见 tick())
 
   function emitZVelocity() {

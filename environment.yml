@@ -16,6 +16,7 @@ dependencies:
     # Additional pip-only packages can be listed here.
     # The third-party SDK dependencies are installed from its pyproject.toml
     # by running: pip install -e third_party/reBotArm_control_py
+    - qpsolvers[osqp]
 
 # 避免系统 ROS PYTHONPATH 污染 conda 环境（例如加载旧版 pinocchio）
 variables:
