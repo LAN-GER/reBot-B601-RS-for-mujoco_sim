@@ -187,17 +187,58 @@ def min_jerk_interpolation(q0: np.ndarray, q1: np.ndarray, t: float) -> np.ndarr
 
 
 def _get_lan_ip() -> str:
-    """获取本机局域网 IP，失败时返回 localhost。"""
+    """获取本机局域网 IP，优先返回 RFC1918 私网地址；失败时返回 localhost。"""
+    import re
     import socket
+    import subprocess
+
+    def _is_private(ip: str) -> bool:
+        parts = ip.split(".")
+        if len(parts) != 4:
+            return False
+        try:
+            a, b, _, _ = (int(x) for x in parts)
+        except ValueError:
+            return False
+        if a == 10:
+            return True
+        if a == 172 and 16 <= b <= 31:
+            return True
+        if a == 192 and b == 168:
+            return True
+        return False
+
+    def _is_loopback_or_linklocal(ip: str) -> bool:
+        return ip.startswith("127.") or ip.startswith("169.254.")
+
+    # 1) 从本机所有网卡解析 IPv4 地址（Linux）
+    try:
+        out = subprocess.check_output(
+            ["ip", "-4", "-o", "addr", "show"], timeout=2, text=True
+        )
+        ips = re.findall(r"inet\s+([\d.]+)/\d+", out)
+        candidates = [ip for ip in ips if not _is_loopback_or_linklocal(ip)]
+        private = [ip for ip in candidates if _is_private(ip)]
+        if private:
+            return private[0]
+        if candidates:
+            return candidates[0]
+    except Exception:
+        pass
+
+    # 2) 回退：通过默认路由推断（可能返回 VPN/代理接口，仅作备选）
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.settimeout(0.1)
         s.connect(("8.8.8.8", 80))
         ip = s.getsockname()[0]
         s.close()
-        return ip
+        if not _is_loopback_or_linklocal(ip):
+            return ip
     except Exception:
-        return "localhost"
+        pass
+
+    return "localhost"
 
 def _log(server: WebSocketServer, text: str, tag: str = "") -> None:
     """同时输出到终端和浏览器日志面板。"""
