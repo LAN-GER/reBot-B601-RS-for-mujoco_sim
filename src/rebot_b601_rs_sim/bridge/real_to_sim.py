@@ -387,30 +387,6 @@ class RealToSimBridge:
             np.asarray(tau_full, dtype=float),
         )
 
-    def get_arm_q_real(self) -> np.ndarray:
-        """读取真实机械臂 6 个臂关节位置。"""
-        q_full, _, _ = self.read_real_state()
-        return q_full[self._real_indices].copy()
-
-    def get_arm_dq_real(self) -> np.ndarray:
-        """读取真实机械臂 6 个臂关节速度。"""
-        _, dq_full, _ = self.read_real_state()
-        return dq_full[self._real_indices].copy()
-
-    def get_gripper_q_real(self) -> float | None:
-        """读取真实夹爪电机位置（rad）。模拟模式下返回 0.0。"""
-        if self._gripper_real_index is None:
-            return None
-        q_full, _, _ = self.read_real_state()
-        return float(q_full[self._gripper_real_index])
-
-    def get_gripper_dq_real(self) -> float | None:
-        """读取真实夹爪电机速度（rad/s）。"""
-        if self._gripper_real_index is None:
-            return None
-        _, dq_full, _ = self.read_real_state()
-        return float(dq_full[self._gripper_real_index])
-
     def sync(self, q_real: np.ndarray | None = None) -> None:
         """将真实状态写入仿真。
 
@@ -481,17 +457,28 @@ def create_real_arm(
     channel: str = "can0",
     fallback_to_mock: bool = False,
     hold: bool = True,
-) -> RebotArmClient | None:
+    return_mock: bool = False,
+    mock_q0: np.ndarray | None = None,
+    mock_num_joints: int = 7,
+    mock_has_gripper: bool = True,
+) -> RebotArmClient | MockRealRobot | None:
     """尝试连接真实机械臂，失败时可选回退到模拟模式。
 
     Args:
         hw_yaml: SDK 硬件配置文件名。
         channel: CAN 接口名，默认 can0。
-        fallback_to_mock: 连接失败时是否返回 None（让调用方使用 mock 模式）。
+        fallback_to_mock: 连接失败时是否回退到模拟模式。
         hold: 是否让电机保持位置。设为 False 可让机械臂被手动拖动。
+        return_mock: 为 True 时，fallback_to_mock 失败直接返回 ``MockRealRobot``；
+            否则返回 ``None``（由调用方自行创建 mock）。
+        mock_q0: 创建 ``MockRealRobot`` 时的初始关节角。
+        mock_num_joints: ``MockRealRobot`` 的关节数。
+        mock_has_gripper: ``MockRealRobot`` 是否包含夹爪。
 
     Returns:
-        已连接的 ``RebotArmClient``，或 ``None``（仅当 fallback_to_mock=True 且失败时）。
+        已连接的 ``RebotArmClient``；
+        或 ``MockRealRobot``（fallback_to_mock=True 且 return_mock=True 且失败时）；
+        或 ``None``（fallback_to_mock=True 且 return_mock=False 且失败时）。
 
     Raises:
         RuntimeError: 真实硬件不可用且 fallback_to_mock=False 时。
@@ -504,5 +491,11 @@ def create_real_arm(
         if fallback_to_mock:
             print(f"[WARN] Failed to connect to real robot: {exc}")
             print("[WARN] Falling back to mock mode.")
+            if return_mock:
+                return MockRealRobot(
+                    q0=mock_q0,
+                    num_joints=mock_num_joints,
+                    has_gripper=mock_has_gripper,
+                )
             return None
         raise

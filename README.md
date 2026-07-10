@@ -4,7 +4,7 @@
 
 底层运动学 / 逆运动学 / 动力学 / 重力补偿通过
 [reBotArm_control_py](https://github.com/vectorBH6/reBotArm_control_py.git)
-提供，本工程负责将其与 MuJoCo 仿真环境桥接，并预留 Real-to-Sim、Sim-to-Real 接口。
+提供，本工程负责将其与 MuJoCo 仿真环境桥接，并提供 Real-to-Sim 接口。
 
 ## 功能规划
 
@@ -14,7 +14,6 @@
 - [x] MuJoCo 中实现 IK（含交互式 Viewer 示例）
 - [x] MuJoCo 中实现重力补偿（含交互式 Viewer 示例）
 - [x] Real-to-Sim 接口（支持真实 B601-RS 硬件与模拟模式）
-- [x] Sim-to-Real 接口（示例为模拟模式）
 
 ## 环境要求
 
@@ -83,9 +82,6 @@ python examples/04_real_to_sim.py
 
 # 无硬件时使用模拟模式
 python examples/04_real_to_sim.py --mock
-
-# 在仿真中计算控制指令并展示下发流程
-python examples/05_sim_to_real.py
 ```
 
 ### 带可视化窗口的基础示例
@@ -95,7 +91,6 @@ python examples/05_sim_to_real.py
 ```bash
 python examples/01_load_model.py --viewer
 python examples/04_real_to_sim.py --viewer
-python examples/05_sim_to_real.py --viewer
 ```
 
 > **注意**：`04_real_to_sim.py` 默认会尝试连接真实机械臂；在无硬件环境中请使用 `--mock` 或 `--headless`。
@@ -123,6 +118,28 @@ python examples/07_interactive_gravity_compensation_mujoco.py
 - `c` / `close`：闭合夹爪
 - `q` / `quit` / `exit`：退出
 
+### 真实机械臂 + MuJoCo 数字孪生（Real-to-Sim）
+
+```bash
+# 09：纯重力补偿 + 数字孪生同步（无夹爪力反馈，可自由开合夹爪）
+# --no-hold 禁用电机保持力矩，方便手动拖动；真机运行时建议加上
+python examples/09_real_to_sim_gravity_comp.py --no-hold
+
+# 无硬件时使用模拟模式
+python examples/09_real_to_sim_gravity_comp.py --mock --headless
+```
+
+`09` 的关键参数：
+
+- `--kp-arm 0.0` / `--kd-arm 0.2`：默认纯重力补偿，kd 提供少量阻尼。
+- `--gravity-scale 1.0,1.0,...`：若某关节下坠，可调大对应系数。
+- `--tau-arm-limit 20.0`：臂前馈力矩上限。
+- `--kp-gripper 0.0` / `--kd-gripper 0.05`：夹爪纯位置跟随，可自由开合。
+
+> **注意**：`09` 每轮循环只读取一次真实机械臂状态，然后同步到 MuJoCo 并发送 MIT 命令。
+> 如果在控制循环中多次触发硬件读取（例如反复调用 `bridge.read_real_state()`），
+> 会导致 `_send_zero_mit()` 与重力补偿命令冲突，引起机械臂抖动。
+
 ### 运行测试
 
 ```bash
@@ -139,6 +156,7 @@ pytest tests/
 | `pytest tests/` | 运行单元测试 |
 | `python examples/06_interactive_ik_mujoco.py` | 交互式 IK |
 | `python examples/07_interactive_gravity_compensation_mujoco.py` | 交互式重力补偿 |
+| `python examples/09_real_to_sim_gravity_comp.py --no-hold` | 真机重力补偿 + 数字孪生同步 |
 
 ## 项目结构
 
@@ -161,7 +179,7 @@ reBot-B601-RS-for-mujoco_sim/
 │   ├── config.py                      # 路径与全局配置
 │   ├── robot/                         # MuJoCo 模型/状态封装
 │   ├── control/                       # IK、重力补偿、控制器
-│   ├── bridge/                        # Real-to-Sim / Sim-to-Real
+│   ├── bridge/                        # Real-to-Sim 桥接
 │   ├── simulation/                    # 仿真主循环
 │   └── utils/                         # 工具函数
 ├── examples/                          # 示例脚本
@@ -182,7 +200,7 @@ reBot-B601-RS-for-mujoco_sim/
 - `third_party/reBotArm_control_py` 由脚本自动拉取，不会提交到本仓库。
 - `assets/00_arm_rs_asm_v3/` 下的 MuJoCo XML 由用户手动维护，是本仓库的主要模型文件。
 - `04_real_to_sim.py` 已接入 `reBotArm_control_py` 的 `RebotArm`：连接真实机械臂前请确认 CAN 接口已启动；无硬件时会自动回退到模拟模式。
-- `05_sim_to_real.py` 当前为接口桩实现，接入硬件后需补充控制指令下发逻辑。
+- `09_real_to_sim_gravity_comp.py` 中夹爪由真实电机位置直接驱动；`assets/00_arm_rs_asm_v3/00_arm_rs_asm_v3.xml` 中夹爪作动器已注释禁用，避免 MuJoCo 产生虚假伺服力。
 - `scripts/convert_urdf_to_mjcf.py` 仅作为备用的简化 capsule 模型生成脚本，主流程不使用。
 
 ## 常见问题
@@ -200,6 +218,16 @@ PYTHONPATH=src python -c "import mujoco; from rebot_b601_rs_sim.config import SC
 
 通常是系统 ROS 的 Pinocchio 被优先加载。`rebot-b601-rs-sim` 环境已设置 `PYTHONPATH=""` 隔离 ROS，
 请确认已执行 `conda activate rebot-b601-rs-sim`。
+
+### Q: 运行 `09_real_to_sim_gravity_comp.py` 时机械臂抖动
+
+常见原因：
+
+1. **未加 `--no-hold`**：电机会保持初始位置，与手动拖动冲突。真机运行时请加 `--no-hold`。
+2. **控制循环中多次触发硬件读取**：`09` 每轮循环只读取一次 `arm_group` 状态。
+   若自定义代码中反复调用 `bridge.read_real_state()` 或 `bridge.get_arm_q_real()`，
+   会导致零力矩 MIT 命令与重力补偿命令冲突，引起抖动。
+3. **kd 不合适**：默认 `--kd-arm 0.2` 已提供足够阻尼。若仍抖动，可尝试 `--kd-arm 0.1` 或 `--kd-arm 0.3`。
 
 ### Q: MuJoCo Viewer 无法启动
 

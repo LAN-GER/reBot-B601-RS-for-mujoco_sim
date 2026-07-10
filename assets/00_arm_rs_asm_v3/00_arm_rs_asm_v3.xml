@@ -26,11 +26,9 @@
     <mesh name="motor_7" file="motor_7.STL" />
     <mesh name="gripper_end" file="gripper_end.STL" />
     <mesh name="pla_left" file="pla_left.STL" />
-    <!-- <mesh name="cnc_left" file="cnc_left.STL" /> -->
-    <mesh name="gripper_left" file="gripper_left.STL" />
+    <mesh name="cnc_left" file="cnc_left.STL" />
     <mesh name="pla_right" file="pla_right.STL" />
-    <!-- <mesh name="cnc_right" file="cnc_right.STL" /> -->
-    <mesh name="gripper_right" file="gripper_right.STL" />
+    <mesh name="cnc_right" file="cnc_right.STL" />
     <material name="base_link_mat" rgba="0.7529 0.7529 0.7529 1" specular="0" />
     <material name="link1_mat" rgba="0.7529 0.7529 0.7529 1" specular="0" />
     <material name="link2_mat" rgba="0.7529 0.7529 0.7529 1" specular="0" />
@@ -51,9 +49,9 @@
     <material name="gripper_end_mat_2" rgba="0.7529 0.7529 0.7529 1" />
     <material name="gripper_end_mat_3" rgba="0.7529 0.7529 0.7529 1" />
     <material name="gripper_left_mat" rgba="0.7529 0.7529 0.7529 1" specular="0" />
-    <!-- <material name="gripper_left_mat_2" rgba="0.7529 0.7529 0.7529 1" /> -->
+    <material name="gripper_left_mat_2" rgba="0.7529 0.7529 0.7529 1" />
     <material name="gripper_right_mat" rgba="0.7529 0.7529 0.7529 1" specular="0" />
-    <!-- <material name="gripper_right_mat_2" rgba="0.7529 0.7529 0.7529 1" /> -->
+    <material name="gripper_right_mat_2" rgba="0.7529 0.7529 0.7529 1" />
   </asset>
 
   <worldbody>
@@ -68,7 +66,7 @@
         <geom pos="0 0 0" rgba="0.9373 0.2667 0.2667 1" group="3" contype="1" conaffinity="1" type="mesh" mesh="link1" />
         <body name="link2" pos="0.020343 0.027237 0.07" quat="0.7071055 -0.7071081 0 0">
           <joint name="joint2" type="hinge" axis="0 0 1" limited="true" range="0 3.14" damping="0.5" frictionloss="0"/>
-          <inertial pos="-0.1178648 -0.0034223 -0.0271552" mass="1.972" fullinertia="0.00073374 0.01255987 0.01281387 -0.00000043 0.00000851 0.00000128"/>
+          <inertial pos="-0.1178648 -0.0034223 -0.0271552" mass="1.772" fullinertia="0.00073374 0.01255987 0.01281387 -0.00000043 0.00000851 0.00000128"/>
           <geom pos="0 0 0" group="1" contype="0" conaffinity="0" material="link2_mat" type="mesh" mesh="motor_2_3" />
           <geom pos="0 0 0" group="1" contype="0" conaffinity="0" material="link2_mat_2" type="mesh" mesh="cnc2" />
           <geom pos="0 0 0" group="1" contype="0" conaffinity="0" material="link2_mat_3" type="mesh" mesh="pla2_black" />
@@ -90,7 +88,7 @@
               <geom pos="0 0 0" rgba="0.9373 0.2667 0.2667 1" group="3" contype="1" conaffinity="1" type="mesh" mesh="link4" />
               <body name="link5" pos="0.087 -0.048 -0.03075" quat="0.7071055 -0.7071081 0 0">
                 <joint name="joint5" type="hinge" axis="0 0 -1" limited="true" range="-1.57 1.57" damping="0.5" frictionloss="0"/>
-                <inertial pos="0.0114401 0.0000048 0.0380487" mass="0.1501205" fullinertia="0.0000734238 0.0000551539 0.000052992 0.0000000136 -0.0000008581 -0.0000000133"/>
+                <inertial pos="-0.0114401 0.0000048 0.0480487" mass="0.1501205" fullinertia="0.0000734238 0.0000551539 0.000052992 0.0000000136 -0.0000008581 -0.0000000133"/>
                 <geom pos="0 0 0" group="1" contype="0" conaffinity="0" material="link5_mat" type="mesh" mesh="motor_6" />
                 <geom pos="0 0 0" group="1" contype="0" conaffinity="0" material="link5_mat_2" type="mesh" mesh="cnc5" />
                 <geom pos="0 0 0" group="1" contype="0" conaffinity="0" material="link5_mat_3" type="mesh" mesh="pla5_green" />
@@ -101,7 +99,7 @@
                   <geom pos="0 0 0" group="1" contype="0" conaffinity="0" material="link6_mat" type="mesh" mesh="link6" />
                   <geom pos="0 0 0" rgba="0.9373 0.2667 0.2667 1" group="3" contype="1" conaffinity="1" type="mesh" mesh="link6" />
                   <body name="gripper_end" pos="0 0 0.16621" quat="-0.0000026 0.7071055 0.0000026 0.7071081">
-                    <inertial pos="-0.1127517 0.0001284 -0.0000057" mass="0.35" fullinertia="0.00037354 0.0001583 0.00045353 -0.00000011 0.0000005 0.00000348"/>
+                    <inertial pos="-0.1127517 0.0001284 -0.0000057" mass="0.65" fullinertia="0.00037354 0.0001583 0.00045353 -0.00000011 0.0000005 0.00000348"/>
                     <geom pos="0 0 0" group="1" contype="0" conaffinity="0" material="gripper_end_mat" type="mesh" mesh="pla7_green" />
                     <geom pos="0 0 0" group="1" contype="0" conaffinity="0" material="gripper_end_mat_2" type="mesh" mesh="cnc7" />
                     <geom pos="0 0 0" group="1" contype="0" conaffinity="0" material="gripper_end_mat_3" type="mesh" mesh="motor_7" />
@@ -110,15 +108,15 @@
                       <joint name="joint_left" type="slide" axis="0 0 1" limited="true" range="0 0.05" damping="5.0" frictionloss="0.5"/>
                       <inertial pos="-0.0021801 0.018709 0.0093219" mass="0.0752" diaginertia="0.0000109878 0.0000095015 0.0000093078"/>
                       <geom pos="0 0 0" group="1" contype="0" conaffinity="0" material="gripper_left_mat" type="mesh" mesh="pla_left" />
-                      <!-- <geom pos="0 0 0" group="1" contype="0" conaffinity="0" material="gripper_left_mat_2" type="mesh" mesh="cnc_left" /> -->
-                      <geom pos="0 0 0" rgba="0.9373 0.2667 0.2667 1" group="3" contype="1" conaffinity="1" type="mesh" mesh="gripper_left" />
+                      <geom pos="0 0 0" group="1" contype="0" conaffinity="0" material="gripper_left_mat_2" type="mesh" mesh="cnc_left" />
+                      <geom pos="0 0 0" rgba="0.9373 0.2667 0.2667 1" group="3" contype="1" conaffinity="1" type="mesh" mesh="pla_left" />
                     </body>
                     <body name="gripper_right" pos="-0.041939 0.0000734 0" quat="0.4999982 -0.5 -0.5 -0.5000018">
-                      <joint name="joint_right" type="slide" axis="0 0 1" limited="true" range="0 0.05" damping="5.0" frictionloss="0.5"/>
+                      <joint name="joint_right" type="slide" axis="0 0 1" limited="true" range="0 0.0715" damping="5.0" frictionloss="0.5"/>
                       <inertial pos="0.0021801 -0.018709 0.0093219" mass="0.0752" diaginertia="0.0000109878 0.0000095015 0.0000093078"/>
                       <geom pos="0 0 0" group="1" contype="0" conaffinity="0" material="gripper_right_mat" type="mesh" mesh="pla_right" />
-                      <!-- <geom pos="0 0 0" group="1" contype="0" conaffinity="0" material="gripper_right_mat_2" type="mesh" mesh="cnc_right" /> -->
-                      <geom pos="0 0 0" rgba="0.9373 0.2667 0.2667 1" group="3" contype="1" conaffinity="1" type="mesh" mesh="gripper_right" />
+                      <geom pos="0 0 0" group="1" contype="0" conaffinity="0" material="gripper_right_mat_2" type="mesh" mesh="cnc_right" />
+                      <geom pos="0 0 0" rgba="0.9373 0.2667 0.2667 1" group="3" contype="1" conaffinity="1" type="mesh" mesh="pla_right" />
                     </body>
                   </body>
                 </body>
@@ -136,6 +134,10 @@
     <position name="joint4_servo" joint="joint4" kp="7" kv="1.0" ctrlrange="-1.57 1.57" forcelimited="true" forcerange="-14 14" />
     <position name="joint5_servo" joint="joint5" kp="7" kv="1.0" ctrlrange="-1.57 1.57" forcelimited="true" forcerange="-14 14" />
     <position name="joint6_servo" joint="joint6" kp="7" kv="1.0" ctrlrange="-3.14 3.14" forcelimited="true" forcerange="-14 14" />
+    <!-- Gripper actuators disabled: in real-to-sim the gripper is driven
+         kinematically from the real motor position, so MuJoCo should not
+         apply its own servo force (which would create artificial contact
+         forces and disturb the grasp feedback). -->
     <position name="joint_left_servo" joint="joint_left" kp="250" kv="25.0" ctrlrange="0 0.05" forcelimited="true" forcerange="-500 500" />
     <position name="joint_right_servo" joint="joint_right" kp="250" kv="25.0" ctrlrange="0 0.05" forcelimited="true" forcerange="-500 500" />
   </actuator>
