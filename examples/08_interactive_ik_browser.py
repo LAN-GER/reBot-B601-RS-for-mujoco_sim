@@ -44,6 +44,12 @@ HTTP_PORT = 8766
 JOY_LINEAR_SPEED = 1.00    # m/s，摇杆推到 100% 对应的最大笛卡尔线速度 (方案 D 速度通道)
 VEL_TIKHONOV   = 1e-6       # 阻尼最小二乘 λ,避免雅可比奇异处关节速度爆掉
 
+# 夹爪：真实 7 号电机 0°（闭合）~ 345°（张开）→ MuJoCo 直线位移 0 ~ 0.05 m
+GRIPPER_DEG_MAX = 345.0
+GRIPPER_DISP_MAX = 0.05               # m
+GRIPPER_JOINT7_NAME = "joint7"        # XML 中新增的夹爪驱动关节
+GRIPPER_FINGER_JOINTS = ["joint_left", "joint_right"]
+
 # HTML 模板路径
 _TEMPLATE_PATH = Path(__file__).resolve().parents[1] / "src" / "rebot_b601_rs_sim" / "templates" / "control_panel.html"
 
@@ -253,6 +259,21 @@ def main() -> None:
 
     ik = IKSolver()
 
+    # ── 夹爪关节在 mj_data.qpos 中的地址 ──────────────────────────────────
+    def _joint_qpos_addr(name: str) -> int:
+        jid = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_JOINT, name)
+        if jid < 0:
+            raise RuntimeError(f"MuJoCo 模型中未找到关节: {name}")
+        return int(mj_model.jnt_qposadr[jid])
+
+    gripper7_addr = _joint_qpos_addr(GRIPPER_JOINT7_NAME)
+    gripper_finger_addrs = [_joint_qpos_addr(n) for n in GRIPPER_FINGER_JOINTS]
+    gripper_finger_ranges = [
+        (float(mj_model.jnt_range[mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_JOINT, n)][0]),
+         float(mj_model.jnt_range[mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_JOINT, n)][1]))
+        for n in GRIPPER_FINGER_JOINTS
+    ]
+
     dt = float(mj_model.opt.timestep)
     if dt <= 0.0:
         dt = 0.002
@@ -271,8 +292,8 @@ def main() -> None:
             include_obstacles=True,
         )
 
-    q_current = np.zeros(nq_total)
-    mj_data.qpos[:] = q_current
+    # 用模型默认 qpos 初始化，保留 cube 等未被直接控制的自由度初始位姿
+    q_current = mj_data.qpos.copy()
     mujoco.mj_forward(mj_model, mj_data)
 
     # ── WebSocket 服务 ────────────────────────────────────────────────────
@@ -424,6 +445,15 @@ def main() -> None:
                     with _velocity_lock:
                         _speed_scale = float(msg.get("scale", 1.0))
                     _log(ws_server, f"  速度倍率改为 {_speed_scale:.2f}x", "ok")
+
+                elif msg_type == "gripper":
+                    # 浏览器发来 7 号电机角度（deg），映射到 MuJoCo 直线位移
+                    angle_deg = float(msg.get("angle", 0.0))
+                    angle_deg = np.clip(angle_deg, 0.0, GRIPPER_DEG_MAX)
+                    disp = (angle_deg / GRIPPER_DEG_MAX) * GRIPPER_DISP_MAX
+                    q_current[gripper7_addr] = float(np.clip(disp, 0.0, GRIPPER_DISP_MAX))
+                    for addr, (lo, hi) in zip(gripper_finger_addrs, gripper_finger_ranges):
+                        q_current[addr] = float(np.clip(disp, lo, hi))
 
                 # 注:摇杆速度通道不调用 start_trajectory,由主循环 OSC 块直接积分 q_current
 

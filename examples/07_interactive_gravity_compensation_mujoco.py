@@ -48,8 +48,10 @@ def main() -> None:
     mj_model = mujoco.MjModel.from_xml_path(str(SCENE_PATH))
     mj_data = mujoco.MjData(mj_model)
     N_ARM_JOINTS = 6
-    N_GRIPPER_JOINTS = 2
-    N_ROBOT_JOINTS = N_ARM_JOINTS + N_GRIPPER_JOINTS  # 8
+    # XML 中夹爪包含驱动关节 joint7 + joint_left + joint_right，
+    # qpos 顺序为 6 个臂关节后依次是 joint7/left/right。
+    N_GRIPPER_JOINTS = 3
+    N_ROBOT_JOINTS = N_ARM_JOINTS + N_GRIPPER_JOINTS  # 9
 
     gc = GravityCompensator()
 
@@ -58,9 +60,10 @@ def main() -> None:
     drag_threshold = 0.3  # rad/s，超过此值认为正在被拖动
     still_counter = 0
 
-    # 夹爪开合目标
-    gripper_open = np.array([0.04, 0.057])  # 略小于上限 [0.05, 0.0715]
-    gripper_close = np.zeros(2)
+    # 夹爪开合目标 (joint7, joint_left, joint_right)
+    # joint7 与左右指通过 equality 1:1 联动，因此三者目标相同。
+    gripper_open = np.array([0.04, 0.04, 0.04])  # 略小于上限 0.05
+    gripper_close = np.zeros(3)
 
     # 控制增益
     kp_hold = np.full(N_ROBOT_JOINTS, 8.0)
@@ -112,10 +115,10 @@ def main() -> None:
                     q_hold[:] = 0.0
                 if cmd in ("o", "open"):
                     print("  张开夹爪")
-                    q_hold[N_ARM_JOINTS : N_ARM_JOINTS + 2] = gripper_open
+                    q_hold[N_ARM_JOINTS : N_ARM_JOINTS + N_GRIPPER_JOINTS] = gripper_open
                 if cmd in ("c", "close"):
                     print("  闭合夹爪")
-                    q_hold[N_ARM_JOINTS : N_ARM_JOINTS + 2] = gripper_close
+                    q_hold[N_ARM_JOINTS : N_ARM_JOINTS + N_GRIPPER_JOINTS] = gripper_close
 
             q = mj_data.qpos[:N_ROBOT_JOINTS].copy()
             qd = mj_data.qvel[:N_ROBOT_JOINTS].copy()
@@ -143,11 +146,11 @@ def main() -> None:
 
             # 对机械臂关节施加广义外力
             mj_data.qfrc_applied[:N_ARM_JOINTS] = tau[:N_ARM_JOINTS]
-            # 夹爪直接锁定到目标位置
-            mj_data.qpos[N_ARM_JOINTS : N_ARM_JOINTS + 2] = q_hold[
-                N_ARM_JOINTS : N_ARM_JOINTS + 2
+            # 夹爪直接锁定到目标位置 (joint7 + left + right)
+            mj_data.qpos[N_ARM_JOINTS : N_ARM_JOINTS + N_GRIPPER_JOINTS] = q_hold[
+                N_ARM_JOINTS : N_ARM_JOINTS + N_GRIPPER_JOINTS
             ]
-            mj_data.qvel[N_ARM_JOINTS : N_ARM_JOINTS + 2] = 0.0
+            mj_data.qvel[N_ARM_JOINTS : N_ARM_JOINTS + N_GRIPPER_JOINTS] = 0.0
 
             mujoco.mj_step(mj_model, mj_data)
             viewer.sync()

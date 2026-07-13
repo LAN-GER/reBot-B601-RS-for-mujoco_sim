@@ -339,15 +339,19 @@ class RealToSimBridge:
                 f"joints expected by simulation: {missing}"
             )
 
-        # 夹爪映射：真实 gripper -> MuJoCo joint_left / joint_right
+        # 夹爪映射：真实 gripper -> MuJoCo joint_left / joint_right / joint7
         self._gripper_real_index: int | None = None
         self._gripper_sim_addrs: list[int] = []
+        self._gripper7_sim_addr: int | None = None
         if "gripper" in real_joint_names:
             self._gripper_real_index = real_joint_names.index("gripper")
             for sim_name in ("joint_left", "joint_right"):
                 jid = mujoco.mj_name2id(robot.model, mujoco.mjtObj.mjOBJ_JOINT, sim_name)
                 if jid >= 0:
                     self._gripper_sim_addrs.append(robot.model.jnt_qposadr[jid])
+            jid7 = mujoco.mj_name2id(robot.model, mujoco.mjtObj.mjOBJ_JOINT, "joint7")
+            if jid7 >= 0:
+                self._gripper7_sim_addr = int(robot.model.jnt_qposadr[jid7])
 
     @property
     def is_mock(self) -> bool:
@@ -437,6 +441,14 @@ class RealToSimBridge:
                         lo, hi = self.robot.model.jnt_range[jid]
                         disp = float(np.clip(disp, lo, hi))
                     self.robot.data.qpos[addr] = disp
+
+            # 同步 XML 中新增的 joint7 驱动关节，保证 equality 约束一致性
+            if self._gripper7_sim_addr is not None:
+                self.robot.data.qpos[self._gripper7_sim_addr] = float(
+                    np.clip(disp, 0.0, self.robot.model.jnt_range[
+                        mujoco.mj_name2id(self.robot.model, mujoco.mjtObj.mjOBJ_JOINT, "joint7")
+                    ][1])
+                )
 
         mujoco.mj_forward(self.robot.model, self.robot.data)
 

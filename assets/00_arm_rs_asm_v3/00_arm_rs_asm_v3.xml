@@ -104,6 +104,13 @@
                     <geom pos="0 0 0" group="1" contype="0" conaffinity="0" material="gripper_end_mat_2" type="mesh" mesh="cnc7" />
                     <geom pos="0 0 0" group="1" contype="0" conaffinity="0" material="gripper_end_mat_3" type="mesh" mesh="motor_7" />
                     <geom pos="0 0 0" rgba="0.9373 0.2667 0.2667 1" group="3" contype="1" conaffinity="1" type="mesh" mesh="gripper_end" />
+                    <!-- 夹爪驱动关节：通过 equality 与 joint_left / joint_right 联动。
+                         axis="0 1 0" 沿 gripper_end 局部 -Y，即世界 Y 负方向，
+                         因此 joint7 增大时 left 向 -Y、right 向 +Y 张开。 -->
+                    <body name="gripper_coupler" pos="0 0 0">
+                      <joint name="joint7" type="slide" axis="0 1 0" limited="true" range="0 0.05" damping="1.0" frictionloss="0.1"/>
+                      <inertial pos="0 0 0" mass="0.001" diaginertia="0.000001 0.000001 0.000001"/>
+                    </body>
                     <body name="gripper_left" pos="-0.041939 -0.0000734 0" quat="0.4999982 0.5 -0.5 0.5000018">
                       <joint name="joint_left" type="slide" axis="0 0 1" limited="true" range="0 0.05" damping="5.0" frictionloss="0.5"/>
                       <inertial pos="-0.0021801 0.018709 0.0093219" mass="0.0752" diaginertia="0.0000109878 0.0000095015 0.0000093078"/>
@@ -127,6 +134,11 @@
       </body>
     </body>
   </worldbody>
+  <equality>
+    <!-- joint7 与左右夹爪直线位移 1:1 联动 -->
+    <joint joint1="joint7" joint2="joint_left"  polycoef="0 1 0 0 0"/>
+    <joint joint1="joint7" joint2="joint_right" polycoef="0 1 0 0 0"/>
+  </equality>
   <actuator>
     <position name="joint1_servo" joint="joint1" kp="18" kv="2.0" ctrlrange="-2.8 2.8" forcelimited="true" forcerange="-36 36" />
     <position name="joint2_servo" joint="joint2" kp="18" kv="2.0" ctrlrange="0 3.14" forcelimited="true" forcerange="-36 36" />
@@ -138,7 +150,9 @@
          kinematically from the real motor position, so MuJoCo should not
          apply its own servo force (which would create artificial contact
          forces and disturb the grasp feedback). -->
+    <!--
     <position name="joint_left_servo" joint="joint_left" kp="250" kv="25.0" ctrlrange="0 0.05" forcelimited="true" forcerange="-500 500" />
     <position name="joint_right_servo" joint="joint_right" kp="250" kv="25.0" ctrlrange="0 0.05" forcelimited="true" forcerange="-500 500" />
+    -->
   </actuator>
 </mujoco>

@@ -69,11 +69,10 @@ def main() -> None:
         dt = 0.002
         mj_model.opt.timestep = dt
 
-    # 当前关节配置（全零，含夹爪）
-    q_current = np.zeros(nq_total)
+    # 当前关节配置：用模型默认 qpos 初始化，保留 cube 等未控制自由度的初始位姿
+    q_current = mj_data.qpos.copy()
 
     # 设置 MuJoCo 初始状态
-    mj_data.qpos[:] = q_current
     mujoco.mj_forward(mj_model, mj_data)
 
     # ── 交互线程 ──────────────────────────────────────────────────────────────

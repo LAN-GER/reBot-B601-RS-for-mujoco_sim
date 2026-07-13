@@ -276,6 +276,12 @@
     <input type="range" id="speed-scale" min="0.1" max="5.0" step="0.1" value="1.0">
   </div>
 
+  <div class="section-label">夹爪</div>
+  <div class="slider-group">
+    <div class="label-row"><label>Open</label><span class="val" id="val-gripper">0°</span></div>
+    <input type="range" id="gripper" min="0" max="345" step="1" value="0">
+  </div>
+
   <div class="slider-group">
     <div class="label-row"><label>X <span class="kbd">Q</span><span class="kbd">A</span></label><span class="val" id="val-x">0.300</span></div>
     <input type="range" id="x" min="-0.20" max="0.60" step="0.001" value="0.300">
@@ -507,6 +513,15 @@
     document.getElementById("val-speed-scale").textContent = scale.toFixed(2) + " x";
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: "speed_scale", scale: scale }));
+    }
+  });
+
+  // ── 夹爪滑条：0° 闭合 ~ 345° 张开，实时发送 7 号电机角度（deg）──
+  document.getElementById("gripper").addEventListener("input", function () {
+    const deg = parseFloat(this.value);
+    document.getElementById("val-gripper").textContent = deg.toFixed(0) + "°";
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "gripper", angle: deg }));
     }
   });
 
