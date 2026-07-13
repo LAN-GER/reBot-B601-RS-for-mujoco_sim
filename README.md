@@ -13,6 +13,7 @@
 - [x] 集成 `reBotArm_control_py` SDK
 - [x] MuJoCo 中实现 IK（含交互式 Viewer 示例）
 - [x] MuJoCo 中实现重力补偿（含交互式 Viewer 示例）
+- [x] 浏览器交互式 IK 控制（拖条 + 摇杆速度控制）
 - [x] Real-to-Sim 接口（支持真实 B601-RS 硬件与模拟模式）
 
 ## 环境要求
@@ -103,6 +104,9 @@ python examples/06_interactive_ik_mujoco.py
 
 # 在 MuJoCo Viewer 中拖动关节，松手后关节悬浮在当前位置
 python examples/07_interactive_gravity_compensation_mujoco.py
+
+# 浏览器拖条 / 摇杆控制 IK + MuJoCo 可视化
+python examples/08_interactive_ik_browser.py
 ```
 
 `06` 的交互命令：
@@ -117,6 +121,18 @@ python examples/07_interactive_gravity_compensation_mujoco.py
 - `o` / `open`：张开夹爪
 - `c` / `close`：闭合夹爪
 - `q` / `quit` / `exit`：退出
+
+### 浏览器交互式 IK（Web 控制面板）
+
+```bash
+python examples/08_interactive_ik_browser.py
+```
+
+启动后打开终端输出的地址（默认 `http://localhost:8766`），通过网页拖条设定目标位姿，
+或使用页面摇杆进行笛卡尔速度控制；MuJoCo viewer 会实时同步机械臂运动。
+
+> **注意**：浏览器示例依赖 `tornado`，已包含在 `environment.yml` 中。若提示未安装，可执行
+> `conda install -c conda-forge tornado` 或 `pip install tornado`。
 
 ### 真实机械臂 + MuJoCo 数字孪生（Real-to-Sim）
 
@@ -156,6 +172,7 @@ pytest tests/
 | `pytest tests/` | 运行单元测试 |
 | `python examples/06_interactive_ik_mujoco.py` | 交互式 IK |
 | `python examples/07_interactive_gravity_compensation_mujoco.py` | 交互式重力补偿 |
+| `python examples/08_interactive_ik_browser.py` | 浏览器交互式 IK |
 | `python examples/09_real_to_sim_gravity_comp.py --no-hold` | 真机重力补偿 + 数字孪生同步 |
 
 ## 项目结构
@@ -181,7 +198,8 @@ reBot-B601-RS-for-mujoco_sim/
 │   ├── control/                       # IK、重力补偿、控制器
 │   ├── bridge/                        # Real-to-Sim 桥接
 │   ├── simulation/                    # 仿真主循环
-│   └── utils/                         # 工具函数
+│   ├── utils/                         # 工具函数
+│   └── templates/                     # Web 控制面板 HTML / 工作空间常量 JSON
 ├── examples/                          # 示例脚本
 └── tests/                             # 单元测试
 ```
@@ -194,6 +212,7 @@ reBot-B601-RS-for-mujoco_sim/
 - NumPy / SciPy / PyYAML
 - pytest（测试）
 - MeshCat（可选可视化）
+- tornado（浏览器交互示例 `08_interactive_ik_browser.py`）
 
 ## 注意事项
 

@@ -10,6 +10,7 @@ dependencies:
   - mujoco>=3.0
   - pinocchio
   - meshcat-python
+  - tornado
   - pytest
   - pip
   - pip:
