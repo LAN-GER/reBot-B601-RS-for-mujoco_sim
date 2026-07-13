@@ -1,5 +1,17 @@
 #!/usr/bin/env python3
-"""交互式 IK + MuJoCo 可视化。
+"""交互式 IK + MuJoCo 物理仿真可视化。
+
+- 臂关节 1~6 使用 <motor> 作动器，由 Python POS_VEL 串级控制器驱动：
+      vel_cmd = clip(pos_kp * (q_target - q), -vlim, vlim)
+      torque  = clip(vel_kp * (vel_cmd - qd) + vel_ki * integral, -tau_max, tau_max)
+
+- 夹爪驱动关节 7 使用 <motor> 作动器，由 Python PD 控制器驱动：
+      torque = kp_gripper * (q_target - q) - kv_gripper * qd
+
+joint_left / joint_right 通过 XML 中的 equality 约束与 joint7 联动，
+不需要额外作动器。
+
+不额外添加重力前馈；机械臂/夹爪的稳定完全依赖控制器。
 
 用法:
     python examples/06_interactive_ik_mujoco.py
@@ -9,6 +21,8 @@
     例: 0.3 0 0.2
     例: 0.3 0 0.2 0 0 0
     b / home / zero: 回归零点
+    o / open: 张开夹爪
+    c / close: 闭合夹爪
     q / quit / exit: 退出
 """
 
@@ -30,10 +44,34 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from rebot_b601_rs_sim.config import SCENE_PATH
 from rebot_b601_rs_sim.control.ik import IKSolver
+from rebot_b601_rs_sim.control.pos_vel_controller import POSVELController
 
-# 机械臂关节数（不含 gripper）
+# 机械臂关节数（不含 gripper 驱动关节 joint7）
 N_ARM_JOINTS = 6
 LINEAR_SPEED = 0.15  # 笛卡尔运动速度 (m/s)，用于估算轨迹时长
+
+# 夹爪：真实 7 号电机 0°（闭合）~ 345°（张开）→ MuJoCo joint7 直线位移 0 ~ 0.05 m
+GRIPPER_DEG_MAX = 345.0
+GRIPPER_DISP_MAX = 0.05
+
+# 臂关节真实电机 POS_VEL 模式参数（与 rebotarm_rs.yaml 对应）
+POS_KP = np.array([13.0, 16.0, 14.0, 20.0, 10.0, 10.0])
+VEL_KP = np.array([12.0, 14.0, 14.0, 5.0, 4.0, 4.0])
+VEL_KI = np.array([0.1, 0.1, 0.1, 0.1, 0.1, 0.1])
+VLIM = np.array([10.0, 10.0, 10.0, 10.0, 10.0, 10.0])
+TAU_MAX = np.array([36.0, 36.0, 36.0, 36.0, 36.0, 36.0])
+
+# 力矩输出低通滤波系数（越小越平滑，1.0 表示无滤波）
+ARM_OUTPUT_FILTER_ALPHA = 0.3
+
+# 夹爪 PD 控制器参数（在 Python 中可调）
+# 增大 kp/kv 可提高夹爪刚度和响应速度，减少臂运动时的被动开合。
+# 但过大容易引起振荡；700/70/300 是响应速度与稳定性的折中。
+# BIAS 用于接近目标时提供额外力矩，克服静摩擦，避免最后一点闭合过慢。
+GRIPPER_KP = 700.0
+GRIPPER_KV = 70.0
+GRIPPER_TAU_MAX = 300.0
+GRIPPER_BIAS = 2.0
 
 
 def input_thread_fn(cmd_queue: queue.Queue, stop_event: threading.Event) -> None:
@@ -59,7 +97,6 @@ def main() -> None:
     # ── 加载模型 ──────────────────────────────────────────────────────────────
     mj_model = mujoco.MjModel.from_xml_path(str(SCENE_PATH))
     mj_data = mujoco.MjData(mj_model)
-    nq_total = mj_model.nq
 
     ik = IKSolver()
 
@@ -69,8 +106,48 @@ def main() -> None:
         dt = 0.002
         mj_model.opt.timestep = dt
 
+    # 查找臂关节 <motor> 作动器索引
+    arm_actuator_names = [f"joint{i}_motor" for i in range(1, N_ARM_JOINTS + 1)]
+    arm_actuator_ids: list[int] = []
+    for name in arm_actuator_names:
+        aid = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)
+        if aid < 0:
+            raise RuntimeError(f"MuJoCo 模型中未找到作动器: {name}")
+        arm_actuator_ids.append(aid)
+
+    # 查找夹爪驱动关节 <motor> 作动器索引
+    gripper_actuator_name = "joint7_motor"
+    gripper_actuator_id = mujoco.mj_name2id(
+        mj_model, mujoco.mjtObj.mjOBJ_ACTUATOR, gripper_actuator_name
+    )
+    if gripper_actuator_id < 0:
+        raise RuntimeError(f"MuJoCo 模型中未找到作动器: {gripper_actuator_name}")
+
+    # 查找夹爪驱动关节 joint7 在 qpos 中的地址
+    def _joint_qpos_addr(name: str) -> int:
+        jid = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_JOINT, name)
+        if jid < 0:
+            raise RuntimeError(f"MuJoCo 模型中未找到关节: {name}")
+        return int(mj_model.jnt_qposadr[jid])
+
+    gripper7_addr = _joint_qpos_addr("joint7")
+
+    # POS_VEL 串级控制器（仅用于臂关节）
+    pos_vel = POSVELController(
+        pos_kp=POS_KP,
+        vel_kp=VEL_KP,
+        vel_ki=VEL_KI,
+        vlim=VLIM,
+        tau_max=TAU_MAX,
+        dt=dt,
+        output_filter_alpha=ARM_OUTPUT_FILTER_ALPHA,
+    )
+
     # 当前关节配置：用模型默认 qpos 初始化，保留 cube 等未控制自由度的初始位姿
     q_current = mj_data.qpos.copy()
+
+    # 夹爪目标角度（度），0° 闭合，345° 张开
+    gripper_target_deg = 0.0
 
     # 设置 MuJoCo 初始状态
     mujoco.mj_forward(mj_model, mj_data)
@@ -96,9 +173,13 @@ def main() -> None:
     trajectory_lock = threading.Lock()
 
     print("=" * 60)
-    print("MuJoCo IK 仿真已启动")
+    print("MuJoCo IK 物理仿真已启动")
+    print("臂作动器: <motor> + Python POS_VEL 控制器")
+    print("夹爪作动器: <motor> + Python PD 控制器")
     print("输入: x y z [roll pitch yaw] (米 / 弧度)")
     print("      b / home / zero: 回归零点")
+    print("      o / open: 张开夹爪")
+    print("      c / close: 闭合夹爪")
     print("      q / quit / exit: 退出")
     print("=" * 60)
 
@@ -118,7 +199,7 @@ def main() -> None:
             )
 
     def print_current_pose() -> None:
-        pos, rot = ik.forward_kinematics(q_current[:N_ARM_JOINTS])
+        pos, rot = ik.forward_kinematics(mj_data.qpos[:N_ARM_JOINTS])
         rpy = pin.rpy.matrixToRpy(rot)
         print(
             f"  当前末端: pos=[{pos[0]:.3f} {pos[1]:.3f} {pos[2]:.3f}] "
@@ -145,6 +226,16 @@ def main() -> None:
                 if cmd in ("b", "home", "zero"):
                     print("  回归零点")
                     start_trajectory(np.zeros(N_ARM_JOINTS))
+                    continue
+
+                if cmd in ("o", "open"):
+                    print("  张开夹爪")
+                    gripper_target_deg = GRIPPER_DEG_MAX
+                    continue
+
+                if cmd in ("c", "close"):
+                    print("  闭合夹爪")
+                    gripper_target_deg = 0.0
                     continue
 
                 try:
@@ -210,13 +301,35 @@ def main() -> None:
                             q_start, q_end, elapsed / duration
                         )
 
-            # 直接设置 qpos 并做运动学前向，不调用 mj_step 做物理积分
-            mj_data.qpos[:] = q_current
-            mujoco.mj_forward(mj_model, mj_data)
-            viewer.sync()
+            # 夹爪目标位置（m）：电机角度 -> joint7 直线位移
+            gripper_disp = (gripper_target_deg / GRIPPER_DEG_MAX) * GRIPPER_DISP_MAX
+            gripper_disp = float(np.clip(gripper_disp, 0.0, GRIPPER_DISP_MAX))
 
-            # 避免 CPU 占满，同时保持 viewer 响应
-            time.sleep(max(0.0, dt - 0.001))
+            # 夹爪 PD 控制器（带摩擦补偿偏置）
+            q7 = mj_data.qpos[gripper7_addr]
+            qd7 = mj_data.qvel[gripper7_addr]
+            gripper_err = gripper_disp - q7
+            tau_gripper = (
+                GRIPPER_KP * gripper_err
+                - GRIPPER_KV * qd7
+                + GRIPPER_BIAS * np.sign(gripper_err)
+            )
+            tau_gripper = float(np.clip(tau_gripper, -GRIPPER_TAU_MAX, GRIPPER_TAU_MAX))
+            mj_data.ctrl[gripper_actuator_id] = tau_gripper
+
+            # 臂关节 POS_VEL 控制器
+            q_target = q_current[:N_ARM_JOINTS]
+            q = mj_data.qpos[:N_ARM_JOINTS]
+            qd = mj_data.qvel[:N_ARM_JOINTS]
+            tau = pos_vel.compute(q_target, q, qd)
+
+            # 将力矩写入臂 <motor> 作动器
+            for i, aid in enumerate(arm_actuator_ids):
+                mj_data.ctrl[aid] = float(tau[i])
+
+            # 物理积分一步
+            mujoco.mj_step(mj_model, mj_data)
+            viewer.sync()
 
     print("\n退出仿真。")
 

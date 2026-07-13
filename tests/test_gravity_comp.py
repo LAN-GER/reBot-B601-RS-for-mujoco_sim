@@ -26,6 +26,11 @@ def test_gravity_comp_no_actuator() -> None:
         for i in range(robot.model.nu):
             robot.data.ctrl[i] = robot.data.qpos[robot.model.actuator_trnid[i, 0]]
 
+    # 测试目的是验证“无执行器锁定”时重力补偿能让关节运动；
+    # 临时将 actuator gear 置零，避免新版 position servo 增益过高导致关节被锁住。
+    original_gears = robot.model.actuator_gear[:, 0].copy()
+    robot.model.actuator_gear[:, 0] = 0.0
+
     kp_hold = np.zeros(nv)
     kd_hold = np.zeros(nv)
     kp_hold[:N_ARM_JOINTS] = 8.0
@@ -33,17 +38,20 @@ def test_gravity_comp_no_actuator() -> None:
     q_hold = np.zeros(nq)
     q_hold[:N_ARM_JOINTS] = q0
 
-    for _ in range(100):
-        q = robot.data.qpos[:nq].copy()
-        qd = robot.data.qvel[:nv].copy()
-        tau_g = gc.compute(q[:N_ARM_JOINTS])
-        mujoco.mj_forward(robot.model, robot.data)
-        tau_dyn = robot.data.qfrc_bias[:nv].copy()
-        tau = tau_dyn + kp_hold * (q_hold[:nv] - q[:nv]) - kd_hold * qd
-        robot.data.qfrc_applied[:N_ARM_JOINTS] = tau[:N_ARM_JOINTS]
-        mujoco.mj_step(robot.model, robot.data)
+    try:
+        for _ in range(100):
+            q = robot.data.qpos[:nq].copy()
+            qd = robot.data.qvel[:nv].copy()
+            tau_g = gc.compute(q[:N_ARM_JOINTS])
+            mujoco.mj_forward(robot.model, robot.data)
+            tau_dyn = robot.data.qfrc_bias[:nv].copy()
+            tau = tau_dyn + kp_hold * (q_hold[:nv] - q[:nv]) - kd_hold * qd
+            robot.data.qfrc_applied[:N_ARM_JOINTS] = tau[:N_ARM_JOINTS]
+            mujoco.mj_step(robot.model, robot.data)
 
-    q_final = robot.get_q()
-    print(f"q_final: {q_final}", flush=True)
-    # 至少有一个关节离开了初始位置（否则说明被锁定）
-    assert np.linalg.norm(q_final - q0) > 0.01, "Joints appear locked"
+        q_final = robot.get_q()
+        print(f"q_final: {q_final}", flush=True)
+        # 至少有一个关节离开了初始位置（否则说明被锁定）
+        assert np.linalg.norm(q_final - q0) > 0.01, "Joints appear locked"
+    finally:
+        robot.model.actuator_gear[:, 0] = original_gears

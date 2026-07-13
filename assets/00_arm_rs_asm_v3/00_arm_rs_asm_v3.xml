@@ -135,24 +135,24 @@
     </body>
   </worldbody>
   <equality>
-    <!-- joint7 与左右夹爪直线位移 1:1 联动 -->
-    <joint joint1="joint7" joint2="joint_left"  polycoef="0 1 0 0 0"/>
-    <joint joint1="joint7" joint2="joint_right" polycoef="0 1 0 0 0"/>
+    <!-- joint7 与左右夹爪直线位移 1:1 联动。
+         solref/solimp 使约束更硬，减少臂运动时 left/right 相对 joint7 的滞后。 -->
+    <joint joint1="joint7" joint2="joint_left"  polycoef="0 1 0 0 0" solref="0.001 1" solimp="0.99 0.99 0.001"/>
+    <joint joint1="joint7" joint2="joint_right" polycoef="0 1 0 0 0" solref="0.001 1" solimp="0.99 0.99 0.001"/>
   </equality>
   <actuator>
-    <position name="joint1_servo" joint="joint1" kp="18" kv="2.0" ctrlrange="-2.8 2.8" forcelimited="true" forcerange="-36 36" />
-    <position name="joint2_servo" joint="joint2" kp="18" kv="2.0" ctrlrange="0 3.14" forcelimited="true" forcerange="-36 36" />
-    <position name="joint3_servo" joint="joint3" kp="18" kv="2.0" ctrlrange="0 3.14" forcelimited="true" forcerange="-36 36" />
-    <position name="joint4_servo" joint="joint4" kp="7" kv="1.0" ctrlrange="-1.57 1.57" forcelimited="true" forcerange="-14 14" />
-    <position name="joint5_servo" joint="joint5" kp="7" kv="1.0" ctrlrange="-1.57 1.57" forcelimited="true" forcerange="-14 14" />
-    <position name="joint6_servo" joint="joint6" kp="7" kv="1.0" ctrlrange="-3.14 3.14" forcelimited="true" forcerange="-14 14" />
-    <!-- Gripper actuators disabled: in real-to-sim the gripper is driven
-         kinematically from the real motor position, so MuJoCo should not
-         apply its own servo force (which would create artificial contact
-         forces and disturb the grasp feedback). -->
-    <!--
-    <position name="joint_left_servo" joint="joint_left" kp="250" kv="25.0" ctrlrange="0 0.05" forcelimited="true" forcerange="-500 500" />
-    <position name="joint_right_servo" joint="joint_right" kp="250" kv="25.0" ctrlrange="0 0.05" forcelimited="true" forcerange="-500 500" />
-    -->
+    <!-- 臂关节作动器使用 <motor>：由 Python 中的 POS_VEL 串级控制器驱动。
+         ctrl 为关节力矩（N·m），ctrlrange 对应真实电机输出力矩限制。
+         位置环/速度环参数在代码中配置，与真实电机 POS_VEL 模式一致。 -->
+    <motor name="joint1_motor" joint="joint1" ctrlrange="-36 36" gear="1" />
+    <motor name="joint2_motor" joint="joint2" ctrlrange="-36 36" gear="1" />
+    <motor name="joint3_motor" joint="joint3" ctrlrange="-36 36" gear="1" />
+    <motor name="joint4_motor" joint="joint4" ctrlrange="-14 14" gear="1" />
+    <motor name="joint5_motor" joint="joint5" ctrlrange="-14 14" gear="1" />
+    <motor name="joint6_motor" joint="joint6" ctrlrange="-14 14" gear="1" />
+    <!-- 夹爪由 joint7 驱动；joint_left / joint_right 通过 equality 约束与 joint7 联动。
+         这里给 joint7 加 <motor>，由 Python 中的 PD 控制器驱动。
+         注意：若用于 real-to-sim，此作动器应禁用，改由真实电机位置直接驱动。 -->
+    <motor name="joint7_motor" joint="joint7" ctrlrange="-500 500" gear="1" />
   </actuator>
 </mujoco>
