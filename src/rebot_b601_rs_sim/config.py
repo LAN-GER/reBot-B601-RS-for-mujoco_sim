@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Any
+
+import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 THIRD_PARTY_DIR = PROJECT_ROOT / "third_party"
@@ -23,6 +26,9 @@ ROBOT_XML_PATH = PROJECT_ROOT / "assets" / "00_arm_rs_asm_v3" / "00_arm_rs_asm_v
 SCENE_PATH = PROJECT_ROOT / "assets" / "00_arm_rs_asm_v3" / "scene.xml"
 MJCF_PATH = SCENE_PATH  # 默认加载带场景的完整模型
 
+# B601-RS 控制参数 YAML
+REBOTARM_CONFIG_PATH = PROJECT_ROOT / "config" / "rebotarm.yaml"
+
 # 末端执行器帧名称（需与 SDK 配置一致）
 END_EFFECTOR_FRAME = "gripper_end"
 
@@ -38,3 +44,17 @@ def ensure_sdk_available() -> None:
             f"SDK not found at {SDK_DIR}. "
             "Please run: bash scripts/setup_third_party.sh"
         )
+
+
+def load_rebotarm_config() -> dict[str, Any]:
+    """加载 config/rebotarm.yaml 中的 B601-RS 控制参数。
+
+    Returns:
+        解析后的 YAML 字典，包含 arm、gripper、motion 等配置。
+    """
+    if not REBOTARM_CONFIG_PATH.exists():
+        raise FileNotFoundError(
+            f"Config file not found: {REBOTARM_CONFIG_PATH}"
+        )
+    with open(REBOTARM_CONFIG_PATH, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f)

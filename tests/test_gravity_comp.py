@@ -39,7 +39,7 @@ def test_gravity_comp_no_actuator() -> None:
     q_hold[:N_ARM_JOINTS] = q0
 
     try:
-        for _ in range(100):
+        for _ in range(200):
             q = robot.data.qpos[:nq].copy()
             qd = robot.data.qvel[:nv].copy()
             tau_g = gc.compute(q[:N_ARM_JOINTS])

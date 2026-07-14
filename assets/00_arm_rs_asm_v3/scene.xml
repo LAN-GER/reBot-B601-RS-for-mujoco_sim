@@ -2,7 +2,7 @@
   <include file="00_arm_rs_asm_v3.xml"/>
 
   <!-- 提高接触求解精度，减少夹爪闭合时的抖动 -->
-  <option timestep="0.002" iterations="100" solver="Newton" integrator="Euler"/>
+  <option timestep="0.001" iterations="100" solver="Newton" integrator="Euler"/>
 
   <!-- 禁用相邻连杆之间的自碰撞，避免 URDF mesh 轻微重叠导致关节被锁定 -->
   <contact>
@@ -50,7 +50,7 @@
     <!-- 可抓取方块 -->
     <body name="cube" pos="0.35 0 0.115">
       <freejoint name="cube_freejoint"/>
-      <geom name="cube_geom" type="box" size="0.015 0.015 0.015" rgba="1 0.5 0 1" mass="0.1" friction="2.0 0.1 0.01"/>
+      <geom name="cube_geom" type="box" size="0.015 0.015 0.015" rgba="1 0.5 0 1" mass="0.1" friction="2.0 0.005 0.0001"/>
     </body>
 
   </worldbody>

@@ -42,37 +42,37 @@ import pinocchio as pin
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from rebot_b601_rs_sim.config import SCENE_PATH
+from rebot_b601_rs_sim.config import SCENE_PATH, load_rebotarm_config
 from rebot_b601_rs_sim.control.ik import IKSolver
 from rebot_b601_rs_sim.control.pos_vel_controller import POSVELController
 
+# 加载 B601-RS 控制参数（config/rebotarm.yaml）
+_CFG = load_rebotarm_config()
+_ARM_CFG = _CFG["arm"]
+_GRIPPER_CFG = _CFG["gripper"]
+_MOTION_CFG = _CFG["motion"]
+
 # 机械臂关节数（不含 gripper 驱动关节 joint7）
-N_ARM_JOINTS = 6
-LINEAR_SPEED = 0.15  # 笛卡尔运动速度 (m/s)，用于估算轨迹时长
+N_ARM_JOINTS = int(_ARM_CFG["n_joints"])
+LINEAR_SPEED = float(_MOTION_CFG["linear_speed"])  # 笛卡尔运动速度 (m/s)
 
-# 夹爪：真实 7 号电机 0°（闭合）~ 345°（张开）→ MuJoCo joint7 直线位移 0 ~ 0.05 m
-GRIPPER_DEG_MAX = 345.0
-GRIPPER_DISP_MAX = 0.05
+# 臂关节 POS_VEL 控制器参数
+POS_KP = np.array(_ARM_CFG["pos_vel"]["pos_kp"], dtype=float)
+VEL_KP = np.array(_ARM_CFG["pos_vel"]["vel_kp"], dtype=float)
+VEL_KI = np.array(_ARM_CFG["pos_vel"]["vel_ki"], dtype=float)
+VLIM = np.array(_ARM_CFG["pos_vel"]["vlim"], dtype=float)
+TAU_MAX = np.array(_ARM_CFG["pos_vel"]["tau_max"], dtype=float)
+ARM_OUTPUT_FILTER_ALPHA = float(_ARM_CFG["output_filter_alpha"])
 
-# 臂关节真实电机 POS_VEL 模式参数（与 rebotarm_rs.yaml 对应）
-POS_KP = np.array([13.0, 16.0, 14.0, 20.0, 10.0, 10.0])
-VEL_KP = np.array([12.0, 14.0, 14.0, 5.0, 4.0, 4.0])
-VEL_KI = np.array([0.1, 0.1, 0.1, 0.1, 0.1, 0.1])
-VLIM = np.array([10.0, 10.0, 10.0, 10.0, 10.0, 10.0])
-TAU_MAX = np.array([36.0, 36.0, 36.0, 36.0, 36.0, 36.0])
+# 夹爪参数：真实 7 号电机 0°（闭合）~ 345°（张开）→ MuJoCo joint7 直线位移 0 ~ 0.05 m
+GRIPPER_DEG_MAX = float(_GRIPPER_CFG["deg_max"])
+GRIPPER_DISP_MAX = float(_GRIPPER_CFG["disp_max"])
 
-# 力矩输出低通滤波系数（越小越平滑，1.0 表示无滤波）
-ARM_OUTPUT_FILTER_ALPHA = 0.3
-
-# 夹爪 PD 控制器参数（在 Python 中可调）
-# 增大 kp/kv 可提高夹爪刚度和响应速度，减少臂运动时的被动开合。
-# 但过大容易引起振荡；700/70/300 是响应速度与稳定性的折中。
-# BIAS 用于接近目标时提供额外力矩，克服静摩擦，避免最后一点闭合过慢。
-GRIPPER_KP = 700.0
-GRIPPER_KV = 70.0
-GRIPPER_TAU_MAX = 300.0
-GRIPPER_BIAS = 2.0
-
+# 夹爪 PD 控制器参数
+GRIPPER_KP = float(_GRIPPER_CFG["pd"]["kp"])
+GRIPPER_KV = float(_GRIPPER_CFG["pd"]["kv"])
+GRIPPER_TAU_MAX = float(_GRIPPER_CFG["pd"]["tau_max"])
+GRIPPER_BIAS = float(_GRIPPER_CFG["pd"]["bias"])
 
 def input_thread_fn(cmd_queue: queue.Queue, stop_event: threading.Event) -> None:
     """后台线程：读取终端输入并放入队列。"""
